@@ -109,11 +109,21 @@ import { resolveComposerPrimaryAction } from "./composerAction";
 import { parseStandaloneComposerModeCommand } from "./composerCommands";
 import { formatReasoningEffortLabel, truncateToolbarLabel } from "./composerControlLabels";
 import {
+  createDeferredComposerSyncState,
+  invalidateDeferredComposerSync,
+  scheduleDeferredComposerSync,
+} from "./composerSync";
+import {
   resolveComposerSubmission,
   resolveImageAttachmentFromPath,
   type ResolvedComposerImageAttachment,
 } from "./composerSubmit";
 import { saveClipboardImageToFile } from "./clipboardImage";
+import {
+  KEYBINDING_GUIDE_SECTIONS,
+  shouldClearComposerOnCtrlC,
+  shouldOpenQuitPromptOnEscape,
+} from "./keyboardBehavior";
 import { createT1Logger } from "./log";
 import { resolveUserMessageBubbleWidth } from "./messageLayout";
 import { type TuiPrefs, readPrefs, writePrefs } from "./prefs";
@@ -232,15 +242,6 @@ type ComposerPathTrigger = {
   rangeStart: number;
   rangeEnd: number;
 };
-type KeybindingGuideItem = {
-  readonly shortcut: string;
-  readonly action: string;
-  readonly note?: string;
-};
-type KeybindingGuideSection = {
-  readonly title: string;
-  readonly items: readonly KeybindingGuideItem[];
-};
 type ParsedDiffFile = {
   readonly key: string;
   readonly filePath: string;
@@ -358,6 +359,7 @@ type ConfirmDialogState = {
   title: string;
   body?: string;
   confirmLabel: string;
+  escapeBehavior?: "cancel" | "confirm";
   onConfirm: () => Promise<void>;
 };
 type RenameThreadDialogState = {
@@ -527,108 +529,6 @@ const INSTALL_PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     binaryDescription: "Leave blank to use claude from your PATH.",
   },
 ] as const;
-const KEYBINDING_GUIDE_SECTIONS: readonly KeybindingGuideSection[] = [
-  {
-    title: "Global",
-    items: [
-      {
-        shortcut: "Ctrl+C",
-        action: "Quit T1 Code",
-      },
-      {
-        shortcut: "Esc",
-        action: "Close the active dialog, overlay, or image preview",
-      },
-    ],
-  },
-  {
-    title: "Projects and Threads",
-    items: [
-      {
-        shortcut: "Ctrl+P",
-        action: "Open the add-project prompt",
-      },
-      {
-        shortcut: "Ctrl+N",
-        action: "Create a new thread in the active project",
-      },
-      {
-        shortcut: "Ctrl+B",
-        action: "Toggle the sidebar when space is tight",
-      },
-      {
-        shortcut: "↑ / ↓",
-        action: "Move through projects or threads",
-      },
-      {
-        shortcut: "← / →",
-        action: "Collapse or expand projects, or move focus between panes",
-      },
-      {
-        shortcut: "Enter",
-        action: "Open the focused project or thread action",
-      },
-      {
-        shortcut: "Shift+↑ / Shift+↓",
-        action: "Extend thread selection",
-      },
-      {
-        shortcut: "Delete / Backspace",
-        action: "Delete the focused thread selection",
-        note: "Only works while the thread list is focused.",
-      },
-    ],
-  },
-  {
-    title: "Composer",
-    items: [
-      {
-        shortcut: "Enter",
-        action: "Send the current message",
-      },
-      {
-        shortcut: "Shift+Enter",
-        action: "Insert a newline",
-      },
-      {
-        shortcut: "Delete twice",
-        action: "Remove the last attached image from an empty draft",
-      },
-    ],
-  },
-  {
-    title: "Timeline and Diff",
-    items: [
-      {
-        shortcut: "↑ / ↓ / PageUp / PageDown / Home / End / j / k",
-        action: "Scroll the timeline",
-      },
-      {
-        shortcut: "Ctrl+D",
-        action: "Toggle the full diff view",
-      },
-      {
-        shortcut: "v",
-        action: "Toggle unified and split diff view",
-        note: "Only while the diff view is focused.",
-      },
-    ],
-  },
-  {
-    title: "Images",
-    items: [
-      {
-        shortcut: "Click image chip",
-        action: "Open the image preview overlay",
-      },
-      {
-        shortcut: "Esc or click outside",
-        action: "Close the image preview overlay",
-      },
-    ],
-  },
-] as const;
-
 function buildMessageMarkdownSyntax(palette: typeof PALETTE) {
   return SyntaxStyle.fromStyles({
     keyword: { fg: RGBA.fromHex(palette.warning), bold: true },
@@ -2416,6 +2316,7 @@ export function App({
   const [composerAttachmentDeleteArmed, setComposerAttachmentDeleteArmed] = useState(false);
   const [composerResetKey, setComposerResetKey] = useState(0);
   const composerRef = useRef<TextareaRenderable | null>(null);
+  const deferredComposerSyncRef = useRef(createDeferredComposerSyncState());
   const timelineScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const [imagePasteInFlight, setImagePasteInFlight] = useState(false);
   const sendInFlightRef = useRef(false);
@@ -3566,7 +3467,9 @@ export function App({
   }, [diffFiles]);
 
   function syncComposerFromTextarea() {
-    setTimeout(() => {
+    scheduleDeferredComposerSync({
+      state: deferredComposerSyncRef.current,
+      onSync: () => {
       const nextValue = composerRef.current?.plainText ?? "";
       setComposer(nextValue);
       if (activePendingProgress?.activeQuestion) {
@@ -3585,11 +3488,52 @@ export function App({
           }));
         }
       }
-    }, 0);
+      },
+    });
   }
 
   function readComposerValue(): string {
     return composerRef.current?.plainText ?? composer;
+  }
+
+  function resetComposerTextarea(nextValue: string) {
+    invalidateDeferredComposerSync(deferredComposerSyncRef.current);
+    setComposer(nextValue);
+    setComposerResetKey((current) => current + 1);
+  }
+
+  function clearComposerDraft() {
+    resetComposerTextarea("");
+    setComposerAttachmentDeleteArmed(false);
+    setPathSuggestionEntries([]);
+    setPathSuggestionIndex(0);
+    if (activePendingProgress?.activeQuestion && activePendingUserInput?.requestId) {
+      const questionId = activePendingProgress.activeQuestion.id;
+      const requestId = activePendingUserInput.requestId;
+      setPendingUserInputAnswersByRequestId((current) => ({
+        ...current,
+        [requestId]: {
+          ...current[requestId],
+          [questionId]: {
+            ...current[requestId]?.[questionId],
+            customAnswer: "",
+          },
+        },
+      }));
+    }
+    setStatus("Composer cleared");
+  }
+
+  function requestAppExit() {
+    setConfirmDialog({
+      title: "Quit T1 Code?",
+      body: "Press Enter or Escape again to quit. Use Cancel to stay in the session.",
+      confirmLabel: "Quit",
+      escapeBehavior: "confirm",
+      onConfirm: async () => {
+        onRequestExit?.();
+      },
+    });
   }
 
   function applyComposerPathMention(entry: ProjectEntry) {
@@ -3604,10 +3548,9 @@ export function App({
       "",
     ).replace(/[ \t]{2,}/g, " ");
     addComposerMention(entry);
-    setComposer(nextComposer);
+    resetComposerTextarea(nextComposer);
     setPathSuggestionEntries([]);
     setPathSuggestionIndex(0);
-    setComposerResetKey((current) => current + 1);
     setFocusArea("composer");
     setStatus("File tagged");
     setTimeout(() => {
@@ -3751,6 +3694,12 @@ export function App({
   }
 
   useEffect(() => {
+    return () => {
+      invalidateDeferredComposerSync(deferredComposerSyncRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     setComposerAttachmentDeleteArmed(false);
     clearTerminalImagePreview(terminalRenderer);
     setImagePreview(null);
@@ -3762,19 +3711,17 @@ export function App({
       return;
     }
     if (!activeThreadId) {
-      setComposer("");
+      resetComposerTextarea("");
       setComposerMentions([]);
       setComposerAttachments([]);
-      setComposerResetKey((current) => current + 1);
       return;
     }
     const persistedDraft = composerDraftsByThreadIdRef.current[activeThreadId];
     const nextDraft = persistedDraft ? cloneComposerDraftState(persistedDraft) : null;
-    setComposer(nextDraft?.text ?? "");
+    resetComposerTextarea(nextDraft?.text ?? "");
     setComposerMentions(nextDraft?.mentions ?? []);
     setComposerAttachments(nextDraft?.attachments ?? []);
     setComposerAttachmentDeleteArmed(false);
-    setComposerResetKey((current) => current + 1);
   }, [activeThreadId, prefsReady]);
 
   useEffect(() => {
@@ -3804,8 +3751,7 @@ export function App({
       activeQuestionId && activePendingUserInputAnswers[activeQuestionId]
         ? (activePendingUserInputAnswers[activeQuestionId]?.customAnswer ?? "")
         : "";
-    setComposer(customAnswer);
-    setComposerResetKey((current) => current + 1);
+    resetComposerTextarea(customAnswer);
   }, [
     activePendingProgress?.activeQuestion?.id,
     activePendingUserInput,
@@ -4443,6 +4389,15 @@ export function App({
   useKeyboard((key) => {
     const isNavUp = key.name === "up" || (key.ctrl && key.name === "k");
     const isNavDown = key.name === "down" || (key.ctrl && key.name === "j");
+    const hasDismissibleLayer = Boolean(
+      confirmDialog ||
+      renameThreadDialog ||
+      imagePreview ||
+      showSidebarOverlay ||
+      projectPathPromptOpen ||
+      overlayMenu ||
+      sidebarContextMenu,
+    );
     logger.log("ui.key", {
       name: key.name,
       ctrl: key.ctrl,
@@ -4452,11 +4407,13 @@ export function App({
       source: key.source,
       sequence: key.sequence,
     });
-    if (key.ctrl && key.name === "c") {
-      onRequestExit?.();
-      return;
-    }
     if (confirmDialog && key.name === "escape") {
+      if (confirmDialog.escapeBehavior === "confirm") {
+        const action = confirmDialog.onConfirm;
+        setConfirmDialog(null);
+        void action();
+        return;
+      }
       setConfirmDialog(null);
       return;
     }
@@ -4524,6 +4481,15 @@ export function App({
     }
     if (sidebarContextMenu && key.name === "escape") {
       closeSidebarContextMenu();
+      return;
+    }
+    if (
+      shouldOpenQuitPromptOnEscape({
+        keyName: key.name,
+        hasDismissibleLayer,
+      })
+    ) {
+      requestAppExit();
       return;
     }
     if (sidebarContextMenu) {
@@ -5254,8 +5220,7 @@ export function App({
         },
       },
     }));
-    setComposer("");
-    setComposerResetKey((current) => current + 1);
+    resetComposerTextarea("");
   }
 
   async function advanceActivePendingUserInput() {
@@ -5300,8 +5265,7 @@ export function App({
         return next;
       });
       const persistedDraft = composerDraftsByThreadIdRef.current[activeThreadId];
-      setComposer(persistedDraft?.text ?? "");
-      setComposerResetKey((current) => current + 1);
+      resetComposerTextarea(persistedDraft?.text ?? "");
     } catch (error) {
       setStatus("Answer failed");
       logger.log("userInput.respondFailed", {
@@ -5397,9 +5361,8 @@ export function App({
           setStatus("No plan ready");
           return true;
         }
-        setComposer(buildPlanImplementationPrompt(latestProposedPlan.planMarkdown));
+        resetComposerTextarea(buildPlanImplementationPrompt(latestProposedPlan.planMarkdown));
         setDraftInteractionMode("default");
-        setComposerResetKey((current) => current + 1);
         setFocusArea("composer");
         return true;
       }
@@ -5463,8 +5426,7 @@ export function App({
           });
           setStatus("Answers sent");
           const persistedDraft = composerDraftsByThreadIdRef.current[activeThreadId];
-          setComposer(persistedDraft?.text ?? "");
-          setComposerResetKey((current) => current + 1);
+          resetComposerTextarea(persistedDraft?.text ?? "");
         } catch (error) {
           setStatus("Answer failed");
           logger.log("userInput.respondFailed", {
@@ -5502,8 +5464,7 @@ export function App({
         standaloneModeCommand
       ) {
         applyDraftInteractionMode(standaloneModeCommand);
-        setComposer("");
-        setComposerResetKey((current) => current + 1);
+        resetComposerTextarea("");
         return;
       }
       if (
@@ -5511,8 +5472,7 @@ export function App({
         composerMentions.length === 0 &&
         (await handleSlashCommand(trimmedComposerValue))
       ) {
-        setComposer("");
-        setComposerResetKey((current) => current + 1);
+        resetComposerTextarea("");
         return;
       }
       if (activePendingApproval) {
@@ -5628,7 +5588,7 @@ export function App({
         setSelectedProjectId(projectId);
         setSelectedThreadId(activeThread.id);
         setDraftInteractionMode(followUp.interactionMode);
-        setComposer("");
+        resetComposerTextarea("");
         setComposerMentions([]);
         setComposerAttachments([]);
         setComposerDraftsByThreadId((current) => {
@@ -5639,7 +5599,6 @@ export function App({
           delete next[activeThread.id];
           return next;
         });
-        setComposerResetKey((current) => current + 1);
         setStatus(
           followUp.interactionMode === "default" ? "Implementing plan" : "Plan feedback sent",
         );
@@ -5730,7 +5689,7 @@ export function App({
 
       setSelectedProjectId(projectId);
       setSelectedThreadId(threadId);
-      setComposer("");
+      resetComposerTextarea("");
       setComposerMentions([]);
       setComposerAttachments([]);
       setComposerDraftsByThreadId((current) => {
@@ -5742,7 +5701,6 @@ export function App({
         delete next[activeDraftKey];
         return next;
       });
-      setComposerResetKey((current) => current + 1);
       setStatus("Prompt sent");
       logger.log("composer.sent", { threadId, length: trimmed.length });
     } finally {
@@ -8398,6 +8356,16 @@ export function App({
                         onKeyDown={(key) => {
                           if (imagePasteInFlight || activePendingApproval) {
                             key.preventDefault();
+                            return;
+                          }
+                          if (
+                            shouldClearComposerOnCtrlC({
+                              keyName: key.name,
+                              ctrl: key.ctrl,
+                            })
+                          ) {
+                            key.preventDefault();
+                            clearComposerDraft();
                             return;
                           }
                           if (
