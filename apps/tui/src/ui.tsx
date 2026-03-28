@@ -123,6 +123,7 @@ import { saveClipboardImageToFile } from "./clipboardImage";
 import { KEYBINDING_GUIDE_SECTIONS, isCtrlC, shouldClearComposerOnCtrlC } from "./keyboardBehavior";
 import { createT1Logger } from "./log";
 import { resolveUserMessageBubbleWidth } from "./messageLayout";
+import { parseMessageMarkdownSegments, truncateCodeBlockContent } from "./messageMarkdown";
 import { type TuiPrefs, readPrefs, writePrefs } from "./prefs";
 import { resolveTuiResponsiveLayout, TUI_SIDEBAR_WIDTH } from "./responsiveLayout";
 import { resolveAttachedServerConnection, startServerSupervisor } from "./serverSupervisor";
@@ -1310,13 +1311,18 @@ function AttachmentPill({
   toneIndex = 0,
   align = "flex-start",
   onPress,
+  colors,
 }: {
   label?: string;
   toneIndex?: number;
   align?: "flex-start" | "flex-end";
   onPress?: () => void;
+  colors?: {
+    backgroundColor: string;
+    textColor: string;
+  };
 }) {
-  const tone = resolveAttachmentPillTone(toneIndex);
+  const tone = colors ?? resolveAttachmentPillTone(toneIndex);
   return (
     <box
       onMouseDown={(event) => {
@@ -1458,24 +1464,136 @@ export function MessageMarkdown({
   content,
   color = PALETTE.text,
   fillWidth = true,
+  onCopyCodeBlock,
 }: {
   content: string;
   color?: string;
   fillWidth?: boolean;
+  onCopyCodeBlock?: (value: string) => void;
 }) {
+  const segments = useMemo(() => parseMessageMarkdownSegments(content), [content]);
+
+  if (!segments.some((segment) => segment.kind === "code")) {
+    return (
+      <markdown
+        content={content}
+        syntaxStyle={MESSAGE_MARKDOWN_SYNTAX}
+        conceal={true}
+        style={{
+          width: fillWidth ? "100%" : "auto",
+          minWidth: 0,
+          flexShrink: 0,
+          fg: color,
+          ...(fillWidth ? {} : { maxWidth: "100%" as const }),
+        }}
+      />
+    );
+  }
+
   return (
-    <markdown
-      content={content}
-      syntaxStyle={MESSAGE_MARKDOWN_SYNTAX}
-      conceal={true}
+    <box
       style={{
         width: fillWidth ? "100%" : "auto",
         minWidth: 0,
-        flexShrink: 0,
-        fg: color,
+        flexShrink: 1,
+        flexDirection: "column",
         ...(fillWidth ? {} : { maxWidth: "100%" as const }),
       }}
-    />
+    >
+      {segments.map((segment, index) => {
+        const marginBottom = index < segments.length - 1 ? 1 : 0;
+
+        if (segment.kind === "markdown") {
+          const segmentKey = `${segment.kind}:${segment.content}`;
+          if (!segment.content.trim()) {
+            return <box key={`${segmentKey}:spacer`} style={{ height: marginBottom }} />;
+          }
+
+          return (
+            <markdown
+              key={segmentKey}
+              content={segment.content}
+              syntaxStyle={MESSAGE_MARKDOWN_SYNTAX}
+              conceal={true}
+              style={{
+                width: fillWidth ? "100%" : "auto",
+                minWidth: 0,
+                flexShrink: 0,
+                fg: color,
+                marginBottom,
+                ...(fillWidth ? {} : { maxWidth: "100%" as const }),
+              }}
+            />
+          );
+        }
+
+        const segmentKey = `${segment.kind}:${segment.language ?? ""}:${segment.content}`;
+        const displayedCode = truncateCodeBlockContent(segment.content);
+        return (
+          <box
+            key={segmentKey}
+            style={{
+              width: "auto",
+              minWidth: 0,
+              maxWidth: "85%",
+              flexDirection: "column",
+              marginBottom,
+            }}
+          >
+            <box
+              style={{
+                width: "auto",
+                minWidth: 0,
+                flexDirection: "column",
+                backgroundColor: "#101010",
+                paddingLeft: 1,
+                paddingRight: 1,
+                paddingTop: 1,
+                paddingBottom: 0,
+              }}
+            >
+              {segment.language ? (
+                <text
+                  content={segment.language}
+                  style={{ fg: "#8a8a8a", marginBottom: displayedCode ? 1 : 0 }}
+                />
+              ) : null}
+              <text content={displayedCode || " "} style={{ fg: "#d0d0d0" }} />
+              {onCopyCodeBlock ? (
+                <box
+                  style={{
+                    width: "100%",
+                    minWidth: 0,
+                    flexDirection: "row",
+                    justifyContent: "flex-end",
+                    marginTop: 1,
+                  }}
+                >
+                  <box
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation?.();
+                      onCopyCodeBlock(segment.content);
+                    }}
+                    style={{
+                      width: "auto",
+                      minWidth: 0,
+                      paddingLeft: 0,
+                      paddingRight: 0,
+                      height: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                    }}
+                  >
+                    <text content="󰆏" style={{ fg: "#9a9a9a" }} />
+                  </box>
+                </box>
+              ) : null}
+            </box>
+          </box>
+        );
+      })}
+    </box>
   );
 }
 
@@ -2684,6 +2802,18 @@ export function App({
       terminalRenderer.off?.("resize", handler);
     };
   }, [terminalRenderer]);
+
+  const copyToClipboard = useCallback(
+    async (value: string, successStatus: string) => {
+      try {
+        await copyTextToClipboard(value);
+        setStatus(successStatus);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Clipboard copy failed");
+      }
+    },
+    [setStatus],
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -4587,14 +4717,12 @@ export function App({
         setStatus("Path unavailable");
         return;
       }
-      await copyTextToClipboard(workspacePath);
-      setStatus("Path copied");
+      await copyToClipboard(workspacePath, "Path copied");
       return;
     }
 
     if (actionId === "copy-thread-id") {
-      await copyTextToClipboard(thread.id);
-      setStatus("Thread ID copied");
+      await copyToClipboard(thread.id, "Thread ID copied");
       return;
     }
 
@@ -8730,6 +8858,9 @@ export function App({
                                   <MessageMarkdown
                                     content={userMessageContent.body}
                                     fillWidth={false}
+                                    onCopyCodeBlock={(value) => {
+                                      void copyToClipboard(value, "Code copied");
+                                    }}
                                   />
                                 ) : null}
                               </box>
@@ -8769,7 +8900,12 @@ export function App({
                               flexDirection: "column",
                             }}
                           >
-                            <MessageMarkdown content={renderMessageBody(entry)} />
+                            <MessageMarkdown
+                              content={renderMessageBody(entry)}
+                              onCopyCodeBlock={(value) => {
+                                void copyToClipboard(value, "Code copied");
+                              }}
+                            />
                           </box>
                           <box
                             style={{
@@ -8902,7 +9038,13 @@ export function App({
                                 onOpen={openImagePreview}
                               />
                               {pendingBody.length > 0 ? (
-                                <MessageMarkdown content={pendingBody} fillWidth={false} />
+                                <MessageMarkdown
+                                  content={pendingBody}
+                                  fillWidth={false}
+                                  onCopyCodeBlock={(value) => {
+                                    void copyToClipboard(value, "Code copied");
+                                  }}
+                                />
                               ) : null}
                             </box>
                             <box
