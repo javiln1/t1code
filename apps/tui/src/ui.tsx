@@ -123,7 +123,12 @@ import { saveClipboardImageToFile } from "./clipboardImage";
 import { KEYBINDING_GUIDE_SECTIONS, isCtrlC, shouldClearComposerOnCtrlC } from "./keyboardBehavior";
 import { createT1Logger } from "./log";
 import { resolveUserMessageBubbleWidth } from "./messageLayout";
-import { parseMessageMarkdownSegments, truncateCodeBlockContent } from "./messageMarkdown";
+import {
+  isDiffLikeCodeBlockFiletype,
+  parseMessageMarkdownSegments,
+  resolveCodeBlockFiletype,
+  truncateCodeBlockContent,
+} from "./messageMarkdown";
 import { type TuiPrefs, readPrefs, writePrefs } from "./prefs";
 import { resolveTuiResponsiveLayout, TUI_SIDEBAR_WIDTH } from "./responsiveLayout";
 import { resolveAttachedServerConnection, startServerSupervisor } from "./serverSupervisor";
@@ -622,8 +627,30 @@ function buildDiffSyntax(palette: typeof PALETTE) {
   });
 }
 
+function buildCodeBlockSyntax(_palette: typeof PALETTE) {
+  return SyntaxStyle.fromStyles({
+    keyword: { fg: RGBA.fromHex("#c9b37e"), bold: true },
+    string: { fg: RGBA.fromHex("#9ab37f") },
+    comment: { fg: RGBA.fromHex("#6f6f6f"), italic: true },
+    number: { fg: RGBA.fromHex("#b8a07a") },
+    function: { fg: RGBA.fromHex("#c7c7c7") },
+    type: { fg: RGBA.fromHex("#b3aaa0") },
+    operator: { fg: RGBA.fromHex("#a8a8a8") },
+    variable: { fg: RGBA.fromHex("#d0d0d0") },
+    property: { fg: RGBA.fromHex("#bbbbbb") },
+    constant: { fg: RGBA.fromHex("#c4c4c4") },
+    tag: { fg: RGBA.fromHex("#c9b37e") },
+    attribute: { fg: RGBA.fromHex("#b3aaa0") },
+    "punctuation.bracket": { fg: RGBA.fromHex("#9a9a9a") },
+    "punctuation.delimiter": { fg: RGBA.fromHex("#8a8a8a") },
+    "punctuation.special": { fg: RGBA.fromHex("#7c7c7c") },
+    default: { fg: RGBA.fromHex("#d0d0d0") },
+  });
+}
+
 let MESSAGE_MARKDOWN_SYNTAX = buildMessageMarkdownSyntax(PALETTE);
 let DIFF_SYNTAX = buildDiffSyntax(PALETTE);
+let CODE_BLOCK_SYNTAX = buildCodeBlockSyntax(PALETTE);
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -1529,6 +1556,10 @@ export function MessageMarkdown({
 
         const segmentKey = `${segment.kind}:${segment.language ?? ""}:${segment.content}`;
         const displayedCode = truncateCodeBlockContent(segment.content);
+        const codeBlockFiletype = resolveCodeBlockFiletype(segment.language);
+        const codeBlockSyntax = isDiffLikeCodeBlockFiletype(codeBlockFiletype)
+          ? DIFF_SYNTAX
+          : CODE_BLOCK_SYNTAX;
         return (
           <box
             key={segmentKey}
@@ -1548,17 +1579,24 @@ export function MessageMarkdown({
                 backgroundColor: "#101010",
                 paddingLeft: 1,
                 paddingRight: 1,
-                paddingTop: 1,
+                paddingTop: 0,
                 paddingBottom: 0,
               }}
             >
               {segment.language ? (
-                <text
-                  content={segment.language}
-                  style={{ fg: "#8a8a8a", marginBottom: displayedCode ? 1 : 0 }}
-                />
+                <text content={segment.language} style={{ fg: "#8a8a8a" }} />
               ) : null}
-              <text content={displayedCode || " "} style={{ fg: "#d0d0d0" }} />
+              <code
+                content={displayedCode || " "}
+                {...(codeBlockFiletype ? { filetype: codeBlockFiletype } : {})}
+                syntaxStyle={codeBlockSyntax}
+                conceal={true}
+                style={{
+                  width: "auto",
+                  minWidth: 0,
+                  maxWidth: "100%",
+                }}
+              />
               {onCopyCodeBlock ? (
                 <box
                   style={{
@@ -1566,7 +1604,6 @@ export function MessageMarkdown({
                     minWidth: 0,
                     flexDirection: "row",
                     justifyContent: "flex-end",
-                    marginTop: 1,
                   }}
                 >
                   <box
@@ -2772,6 +2809,7 @@ export function App({
   Object.assign(PALETTE, palette);
   MESSAGE_MARKDOWN_SYNTAX = buildMessageMarkdownSyntax(PALETTE);
   DIFF_SYNTAX = buildDiffSyntax(PALETTE);
+  CODE_BLOCK_SYNTAX = buildCodeBlockSyntax(PALETTE);
 
   useEffect(() => {
     draftThreadsByProjectIdRef.current = draftThreadsByProjectId;

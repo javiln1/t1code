@@ -111,3 +111,24 @@ export function truncateCodeBlockContent(content: string): string {
     )
     .join("\n");
 }
+
+export function resolveCodeBlockFiletype(language: string | null): string | undefined {
+  if (!language) {
+    return undefined;
+  }
+
+  const normalized = language.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (normalized === "patch" || normalized === "udiff" || normalized === "unified-diff") {
+    return "diff";
+  }
+
+  return normalized;
+}
+
+export function isDiffLikeCodeBlockFiletype(filetype: string | undefined): boolean {
+  return filetype === "diff";
+}

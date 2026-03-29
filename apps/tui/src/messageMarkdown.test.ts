@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { parseMessageMarkdownSegments, truncateCodeBlockContent } from "./messageMarkdown";
+import {
+  isDiffLikeCodeBlockFiletype,
+  parseMessageMarkdownSegments,
+  resolveCodeBlockFiletype,
+  truncateCodeBlockContent,
+} from "./messageMarkdown";
 
 describe("parseMessageMarkdownSegments", () => {
   it("keeps plain markdown as a single segment", () => {
@@ -33,5 +38,18 @@ describe("parseMessageMarkdownSegments", () => {
     const content = `short\n${"x".repeat(100)}`;
 
     expect(truncateCodeBlockContent(content)).toEqual(`short\n${"x".repeat(87)}…`);
+  });
+
+  it("normalizes patch-style fence languages to diff", () => {
+    expect(resolveCodeBlockFiletype("patch")).toBe("diff");
+    expect(resolveCodeBlockFiletype("udiff")).toBe("diff");
+    expect(resolveCodeBlockFiletype("unified-diff")).toBe("diff");
+    expect(resolveCodeBlockFiletype("ts")).toBe("ts");
+  });
+
+  it("detects diff-like code block filetypes", () => {
+    expect(isDiffLikeCodeBlockFiletype("diff")).toBe(true);
+    expect(isDiffLikeCodeBlockFiletype("typescript")).toBe(false);
+    expect(isDiffLikeCodeBlockFiletype(undefined)).toBe(false);
   });
 });
