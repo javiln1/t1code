@@ -132,6 +132,7 @@ import {
 import { type TuiPrefs, readPrefs, writePrefs } from "./prefs";
 import { resolveTuiResponsiveLayout, TUI_SIDEBAR_WIDTH } from "./responsiveLayout";
 import { resolveAttachedServerConnection, startServerSupervisor } from "./serverSupervisor";
+import { createCoalescedRefreshRunner } from "./snapshotRefresh";
 import {
   cacheRemoteAttachmentToFile,
   clearTerminalImagePreview,
@@ -2977,7 +2978,6 @@ export function App({
         const nativeApi = nativeBridge.api;
         logger.log("ws.connecting", { wsUrl: server.wsUrl });
         let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-        let refreshInFlight = false;
         let refreshAttempts = 0;
 
         const scheduleRefreshRetry = (reason: string) => {
@@ -2989,9 +2989,8 @@ export function App({
           logger.log("snapshot.retryScheduled", { reason });
         };
 
-        const refresh = async (reason: string) => {
-          if (disposed || refreshInFlight) return;
-          refreshInFlight = true;
+        const refresh = createCoalescedRefreshRunner(async (reason: string) => {
+          if (disposed) return;
           try {
             logger.log("snapshot.refreshStarted", { reason });
             const nextSnapshot = await transport.request<OrchestrationReadModel>(
@@ -3018,10 +3017,8 @@ export function App({
             });
             setStatus(refreshAttempts > 2 ? "Disconnected" : "Booting");
             scheduleRefreshRetry(reason);
-          } finally {
-            refreshInFlight = false;
           }
-        };
+        });
 
         setApi(nativeApi);
         void nativeApi.server
