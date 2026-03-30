@@ -12,11 +12,11 @@ _T3Code, but in your terminal._
 
 </div>
 
+Run instantly:
+
 ```bash
 bunx @maria_rcks/t1code
 ```
-
-<sub>Requires Bun.</sub>
 
 Install globally:
 
