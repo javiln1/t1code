@@ -6,6 +6,7 @@ import type {
   InputRenderable,
   PasteEvent,
   ScrollBoxRenderable,
+  TerminalConsole,
   TextareaRenderable,
 } from "@opentui/core";
 import {
@@ -2662,6 +2663,9 @@ export function App({
     writeOut?: (chunk: string) => void;
     on?: (event: string, handler: (...args: unknown[]) => void) => void;
     off?: (event: string, handler: (...args: unknown[]) => void) => void;
+    console?: TerminalConsole;
+    getSelection?: () => { getSelectedText: () => string } | null;
+    clearSelection?: () => void;
   };
   const paths = useMemo(() => resolveTuiPaths(), []);
   const logger = useMemo(() => createT1Logger(paths.logPath), [paths.logPath]);
@@ -7537,6 +7541,28 @@ export function App({
         }
       : null;
 
+  const copyRendererSelection = useCallback(() => {
+    const selectedText = terminalRenderer.getSelection?.()?.getSelectedText().trim();
+    if (!selectedText) return false;
+    void copyToClipboard(selectedText, "Copied to clipboard");
+    terminalRenderer.clearSelection?.();
+    return true;
+  }, [copyToClipboard, terminalRenderer]);
+
+  useEffect(() => {
+    const terminalConsole = terminalRenderer.console;
+    if (!terminalConsole) return;
+    const previousHandler = terminalConsole.onCopySelection;
+    terminalConsole.onCopySelection = (value: string) => {
+      if (!value.trim()) return;
+      void copyToClipboard(value, "Copied to clipboard");
+      terminalRenderer.clearSelection?.();
+    };
+    return () => {
+      terminalConsole.onCopySelection = previousHandler;
+    };
+  }, [copyToClipboard, terminalRenderer]);
+
   useEffect(() => {
     if (imagePreview?.status !== "ready" || !imagePreview.filePath) {
       clearTerminalImagePreview(terminalRenderer);
@@ -7587,6 +7613,9 @@ export function App({
         if (showSidebarOverlay) {
           setSidebarOverlayOpen(false);
         }
+      }}
+      onMouseUp={() => {
+        copyRendererSelection();
       }}
       style={{
         position: "relative",
