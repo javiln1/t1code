@@ -130,6 +130,7 @@ import {
   resolveCodeBlockFiletype,
   truncateCodeBlockContent,
 } from "./messageMarkdown";
+import { openExternalUrl } from "./openExternal";
 import { type TuiPrefs, readPrefs, writePrefs } from "./prefs";
 import { resolveTuiResponsiveLayout, TUI_SIDEBAR_WIDTH } from "./responsiveLayout";
 import { resolveAttachedServerConnection, startServerSupervisor } from "./serverSupervisor";
@@ -995,20 +996,6 @@ function summarizeGitActionResult(
   if (action === "commit_push") return "Push complete";
   if (action === "commit_push_pr") return "PR flow complete";
   return "Commit complete";
-}
-
-async function openExternalUrl(url: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn("open", [url], {
-      detached: true,
-      stdio: "ignore",
-    });
-    child.once("error", reject);
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
-    });
-  });
 }
 
 function basenameOfPath(input: string): string {
@@ -4465,7 +4452,9 @@ export function App({
         setStatus(
           process.platform === "darwin"
             ? "No image found on clipboard"
-            : "Clipboard images are not supported on this platform",
+            : process.platform === "linux"
+              ? "No clipboard image found, or no Linux clipboard helper is installed"
+              : "Clipboard images are not supported on this platform",
         );
         return;
       }
