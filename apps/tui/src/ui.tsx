@@ -1946,6 +1946,10 @@ const SIDEBAR_THREAD_TIMESTAMP_GAP = 1;
 const SIDEBAR_THREAD_LAYOUT_BUFFER = 1;
 const HEADER_THREAD_TITLE_MAX_LENGTH = 44;
 const COMPOSER_TEXTAREA_MIN_HEIGHT = 3;
+const COMPOSER_PENDING_TEXTAREA_MIN_HEIGHT = 2;
+const PLAN_MODE_PREVIOUS_ICON = "";
+const PLAN_MODE_NEXT_ICON = "";
+const PLAN_MODE_SUBMIT_ICON = "󰄬";
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 8;
 const COMPOSER_PATH_SUGGESTION_MAX_ITEMS = 5;
 const SEND_ANIMATION_INTERVAL_MS = 90;
@@ -2434,10 +2438,20 @@ function PendingInputOptionRow(props: {
   shortcutLabel?: string;
   selected?: boolean;
   disabled?: boolean;
+  compact?: boolean;
+  trailingMargin?: number;
   onPress: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const active = !props.disabled && (props.selected || hovered);
+  const backgroundColor = props.selected
+    ? PALETTE.surfaceInfo
+    : hovered
+      ? PALETTE.controlHover
+      : PALETTE.composerPanel;
+  const leftAccentColor = props.selected ? PALETTE.info : PALETTE.composerPanel;
+  const labelColor = props.disabled ? PALETTE.subtle : PALETTE.text;
+  const descriptionColor = props.selected ? PALETTE.text : PALETTE.subtle;
 
   return (
     <box
@@ -2451,33 +2465,42 @@ function PendingInputOptionRow(props: {
       }}
       style={{
         flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: active ? PALETTE.controlActive : PALETTE.surface,
-        paddingLeft: 1,
-        paddingRight: 1,
-        marginBottom: 1,
-        minHeight: 1,
+        alignItems: "stretch",
+        marginBottom: props.trailingMargin ?? 1,
+        minHeight: props.description ? 3 : 1,
       }}
     >
-      {props.shortcutLabel ? (
-        <text
-          content={props.shortcutLabel}
-          style={{
-            fg: active ? PALETTE.accent : PALETTE.subtle,
-            marginRight: 1,
-          }}
-        />
-      ) : null}
-      <box style={{ flexDirection: "column", flexGrow: 1, flexShrink: 1 }}>
-        <text
-          content={props.label}
-          style={{ fg: props.disabled ? PALETTE.subtle : PALETTE.text }}
-        />
-        {props.description ? (
-          <text content={props.description} style={{ fg: PALETTE.subtle }} />
+      <box style={{ width: 1, backgroundColor: leftAccentColor, flexShrink: 0 }} />
+      <box
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-start",
+          backgroundColor,
+          paddingLeft: 1,
+          paddingRight: 1,
+          paddingTop: props.compact ? 0 : 1,
+          paddingBottom: props.compact ? 0 : 1,
+          flexGrow: 1,
+          flexShrink: 1,
+          minHeight: props.description ? 3 : 1,
+        }}
+      >
+        {props.shortcutLabel ? (
+          <text
+            content={props.shortcutLabel}
+            style={{
+              fg: props.selected || active ? PALETTE.info : PALETTE.subtle,
+              marginRight: 1,
+            }}
+          />
         ) : null}
+        <box style={{ flexDirection: "column", flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
+          <text content={props.label} style={{ fg: labelColor }} />
+          {props.description ? (
+            <text content={props.description} style={{ fg: descriptionColor }} />
+          ) : null}
+        </box>
       </box>
-      {props.selected ? <text content="󰄬" style={{ fg: PALETTE.accent }} /> : null}
     </box>
   );
 }
@@ -2606,6 +2629,7 @@ function ComposerSendButton(props: {
   onPress: () => void;
   disabled?: boolean;
   variant?: "send" | "stop";
+  width?: number;
 }) {
   const [hovered, setHovered] = useState(false);
   const isStop = props.variant === "stop";
@@ -2632,7 +2656,7 @@ function ComposerSendButton(props: {
       style={{
         paddingLeft: props.label ? 1 : 0,
         paddingRight: props.label ? 1 : 0,
-        width: props.label ? "auto" : 3,
+        width: props.label ? "auto" : (props.width ?? 3),
         height: 1,
         backgroundColor: background,
         flexDirection: "row",
@@ -5038,11 +5062,6 @@ export function App({
         const option = activePendingProgress.activeQuestion.options[digit - 1];
         if (option && composer.trim().length === 0) {
           selectActivePendingUserInputOption(activePendingProgress.activeQuestion.id, option.label);
-          if (!activePendingProgress.isLastQuestion) {
-            setTimeout(() => {
-              setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
-            }, 150);
-          }
           return;
         }
       }
@@ -7039,7 +7058,7 @@ export function App({
   const composerBanner = activePendingApproval
     ? { bg: PALETTE.surfaceWarn, text: approvalHint(activePendingApproval) }
     : activePendingUserInput
-      ? { bg: PALETTE.surfaceInfo, text: userInputHint(activePendingUserInput) }
+      ? { bg: null, text: userInputHint(activePendingUserInput) }
       : showPlanFollowUpPrompt && latestProposedPlan
         ? { bg: PALETTE.surfacePlan, text: planHint() }
         : null;
@@ -9300,11 +9319,14 @@ export function App({
                     backgroundColor: PALETTE.composerPanel,
                     border: true,
                     borderStyle: "rounded",
-                    borderColor:
-                      focusArea === "composer"
+                    borderColor: activePendingProgress
+                      ? focusArea === "composer"
+                        ? PALETTE.composerBorderMuted
+                        : PALETTE.border
+                      : focusArea === "composer"
                         ? PALETTE.composerBorder
                         : PALETTE.composerBorderMuted,
-                    paddingTop: 1,
+                    paddingTop: activePendingProgress ? 0 : 1,
                     paddingBottom: 1,
                     paddingLeft: 1,
                     paddingRight: 1,
@@ -9315,7 +9337,7 @@ export function App({
                   {composerBanner ? (
                     <box
                       style={{
-                        backgroundColor: composerBanner.bg,
+                        ...(composerBanner.bg ? { backgroundColor: composerBanner.bg } : {}),
                         paddingLeft: 1,
                         paddingRight: 1,
                         paddingTop: 0,
@@ -9329,11 +9351,13 @@ export function App({
 
                   <box
                     style={{
-                      marginBottom: 1,
+                      marginBottom: activePendingProgress ? 0 : 1,
                       height: activePendingProgress ? "auto" : composerTextareaHeight,
-                      minHeight: composerTextareaHeight,
-                      paddingLeft: 1,
-                      paddingRight: 1,
+                      minHeight: activePendingProgress
+                        ? COMPOSER_PENDING_TEXTAREA_MIN_HEIGHT
+                        : composerTextareaHeight,
+                      paddingLeft: activePendingProgress ? 0 : 1,
+                      paddingRight: activePendingProgress ? 0 : 1,
                       flexDirection: "row",
                       alignItems: "flex-start",
                     }}
@@ -9388,27 +9412,36 @@ export function App({
                       }}
                     >
                       {activePendingProgress?.activeQuestion ? (
-                        <box style={{ flexDirection: "column", marginBottom: 1 }}>
-                          <box
-                            style={{ flexDirection: "row", alignItems: "center", marginBottom: 1 }}
-                          >
-                            <text
-                              content={activePendingProgress.activeQuestion.header}
-                              style={{ fg: PALETTE.info, marginRight: 1 }}
-                            />
+                        <box
+                          style={{
+                            flexDirection: "column",
+                            backgroundColor: PALETTE.composerPanel,
+                            paddingLeft: 1,
+                            paddingRight: 1,
+                            marginBottom: 1,
+                          }}
+                        >
+                          <box style={{ flexDirection: "row", alignItems: "flex-start" }}>
                             {activePendingUserInput &&
                             activePendingUserInput.questions.length > 1 ? (
                               <text
                                 content={`${activePendingProgress.questionIndex + 1}/${activePendingUserInput.questions.length}`}
-                                style={{ fg: PALETTE.subtle }}
+                                style={{ fg: PALETTE.subtle, marginRight: 1 }}
                               />
-                            ) : null}
+                            ) : (
+                              <text
+                                content={activePendingProgress.activeQuestion.header}
+                                style={{ fg: PALETTE.subtle, marginRight: 1 }}
+                              />
+                            )}
+                            <box style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
+                              <text
+                                content={activePendingProgress.activeQuestion.question}
+                                style={{ fg: PALETTE.text }}
+                              />
+                            </box>
                           </box>
-                          <text
-                            content={activePendingProgress.activeQuestion.question}
-                            style={{ fg: PALETTE.text, marginBottom: 1 }}
-                          />
-                          <box style={{ flexDirection: "column" }}>
+                          <box style={{ flexDirection: "column", marginTop: 1 }}>
                             {activePendingProgress.activeQuestion.options.map((option, index) => (
                               <PendingInputOptionRow
                                 key={`${activePendingProgress.activeQuestion?.id}:${option.label}`}
@@ -9422,6 +9455,13 @@ export function App({
                                   !activePendingProgress.usingCustomAnswer
                                 }
                                 disabled={activePendingIsResponding}
+                                compact
+                                trailingMargin={
+                                  index ===
+                                  (activePendingProgress.activeQuestion?.options.length ?? 0) - 1
+                                    ? 0
+                                    : 1
+                                }
                                 onPress={() =>
                                   selectActivePendingUserInputOption(
                                     activePendingProgress.activeQuestion!.id,
@@ -9588,7 +9628,9 @@ export function App({
                           textColor: PALETTE.text,
                           focusedTextColor: PALETTE.text,
                           placeholderColor: PALETTE.subtle,
-                          height: activePendingProgress ? COMPOSER_TEXTAREA_MIN_HEIGHT : "100%",
+                          height: activePendingProgress
+                            ? COMPOSER_PENDING_TEXTAREA_MIN_HEIGHT
+                            : "100%",
                           width: "100%",
                         }}
                       />
@@ -9706,7 +9748,9 @@ export function App({
                           <>
                             {activePendingProgress.questionIndex > 0 ? (
                               <ToolbarButton
-                                label="Previous"
+                                icon={PLAN_MODE_PREVIOUS_ICON}
+                                compact
+                                width={3}
                                 disabled={activePendingIsResponding}
                                 onPress={() => {
                                   setActivePendingUserInputQuestionIndex(
@@ -9714,16 +9758,16 @@ export function App({
                                   );
                                 }}
                               />
-                            ) : null}
+                            ) : (
+                              <box style={{ width: 3, flexShrink: 0 }} />
+                            )}
                             <ComposerSendButton
-                              icon={activePendingProgress.isLastQuestion ? "↑" : "→"}
-                              label={
-                                activePendingIsResponding
-                                  ? "Submitting"
-                                  : activePendingProgress.isLastQuestion
-                                    ? "Submit answers"
-                                    : "Next question"
+                              icon={
+                                activePendingProgress.isLastQuestion
+                                  ? PLAN_MODE_SUBMIT_ICON
+                                  : PLAN_MODE_NEXT_ICON
                               }
+                              width={3}
                               disabled={
                                 activePendingIsResponding ||
                                 (activePendingProgress.isLastQuestion
