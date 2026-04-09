@@ -13,3 +13,7 @@
   - `bun fmt` passed
   - `bun lint` passed with 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
   - `bun typecheck` passed
+- Pushed commit `98d1a39` to `origin/main`.
+- GitHub Actions workflows confirmed active:
+  - `.github/workflows/sync-upstream.yml`
+  - `.github/workflows/watch-t3code-releases.yml`
