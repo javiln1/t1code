@@ -1,0 +1,57 @@
+name: Watch T3 Code Releases
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 */6 * * *"
+
+permissions:
+  issues: write
+
+jobs:
+  watch-releases:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check latest T3 Code release
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const owner = 'pingdotgg';
+            const repo = 't3code';
+            const release = await github.rest.repos.getLatestRelease({ owner, repo });
+            const tag = release.data.tag_name;
+            const title = `Track upstream T3 Code release ${tag}`;
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              per_page: 100,
+            });
+
+            if (existing.data.some((issue) => issue.title === title)) {
+              core.info(`Issue for ${tag} already exists.`);
+              return;
+            }
+
+            const body = [
+              `A new release was published for \`${owner}/${repo}\`.`,
+              '',
+              `- Tag: ${tag}`,
+              `- Name: ${release.data.name || '(no release title)'}`,
+              `- URL: ${release.data.html_url}`,
+              `- Published: ${release.data.published_at}`,
+              '',
+              'Why this is an issue instead of an auto-merge:',
+              '- `maria-rcks/t1code` is based on `pingdotgg/t3code`, but it is not a direct GitHub fork.',
+              '- Direct automatic merges from GUI upstream into this TUI fork are not guaranteed to be safe.',
+              '',
+              'Review the release notes and decide whether to port any relevant changes into this repo.'
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+            });
