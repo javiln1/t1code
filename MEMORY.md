@@ -33,3 +33,8 @@
   - `bun fmt` passed
   - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
   - `bun typecheck` passed
+- User's next requested product priorities, in order:
+  - Add Codex-style steering/queuing.
+  - Add Claude Code-style slash commands with visible discovery.
+  - Add slash-command support for skills, MCP config, context, and related actions.
+- `T1Code.app` was re-registered with Launch Services and Spotlight metadata refreshed.
