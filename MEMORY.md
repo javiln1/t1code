@@ -26,6 +26,13 @@
 - Local run artifacts currently present and untracked:
   - `.tmp/`
   - `apps/tui/maria_rcks-t1code-0.0.21.tgz`
+- Added root script `sync:local` plus tracked helper `scripts/sync-local-install.mjs` to rebuild, pack, and reinstall the global `t1code` command from the local fork.
+- Added a local helper command at `/Users/javilopez/.local/bin/t1refresh` that runs `bun sync:local` from `/Users/javilopez/Projects/t1code`.
+- Verification for the refresh flow completed:
+  - `bun fmt` passed
+  - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
+  - `bun typecheck` passed
+  - `t1refresh` completed successfully and reinstalled `@maria_rcks/t1code` from `apps/tui/maria_rcks-t1code-0.0.21.tgz`
 - Added `scripts/build-ghostty-launcher.mjs` and root script `build:launcher:ghostty`.
 - Built local launcher app at `/Users/javilopez/Applications/T1Code.app`.
 - Ghostty is the chosen host terminal for the clickable launcher because it preserves the TUI while avoiding Terminal.app.
