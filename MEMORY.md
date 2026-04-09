@@ -17,3 +17,12 @@
 - GitHub Actions workflows confirmed active:
   - `.github/workflows/sync-upstream.yml`
   - `.github/workflows/watch-t3code-releases.yml`
+- Additional local run verification completed:
+  - `T1CODE_HEADLESS=1 bun run apps/tui/src/index.tsx` passed and wrote a headless frame.
+  - `bun build:tui` passed.
+  - `T1CODE_HEADLESS=1 bun apps/tui/bin/t1code.js` passed and wrote a headless frame.
+  - Global install from `apps/tui/maria_rcks-t1code-0.0.21.tgz` succeeded.
+  - `t1code` on PATH passed a headless startup check.
+- Local run artifacts currently present and untracked:
+  - `.tmp/`
+  - `apps/tui/maria_rcks-t1code-0.0.21.tgz`

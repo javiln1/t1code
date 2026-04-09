@@ -7,3 +7,6 @@
 - [x] Add scheduled GitHub Actions monitoring for new `pingdotgg/t3code` releases.
 - [x] Verify install, lint, and typecheck flow locally.
 - [x] Push automation changes to `origin/main`.
+- [x] Verify direct source-mode TUI startup in headless mode.
+- [x] Verify built binary startup in headless mode.
+- [x] Install a global `t1` / `t1code` command from a package tarball built from this fork.
