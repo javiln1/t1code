@@ -10,3 +10,6 @@
 - [x] Verify direct source-mode TUI startup in headless mode.
 - [x] Verify built binary startup in headless mode.
 - [x] Install a global `t1` / `t1code` command from a package tarball built from this fork.
+- [x] Add a tracked Ghostty launcher builder to the repo.
+- [x] Build a local `~/Applications/T1Code.app` launcher for one-click opening.
+- [x] Verify launcher build plus repo fmt/lint/typecheck after adding it.

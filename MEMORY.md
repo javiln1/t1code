@@ -26,3 +26,10 @@
 - Local run artifacts currently present and untracked:
   - `.tmp/`
   - `apps/tui/maria_rcks-t1code-0.0.21.tgz`
+- Added `scripts/build-ghostty-launcher.mjs` and root script `build:launcher:ghostty`.
+- Built local launcher app at `/Users/javilopez/Applications/T1Code.app`.
+- Ghostty is the chosen host terminal for the clickable launcher because it preserves the TUI while avoiding Terminal.app.
+- Verification after launcher changes:
+  - `bun fmt` passed
+  - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
+  - `bun typecheck` passed
