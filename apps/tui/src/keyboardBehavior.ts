@@ -70,7 +70,8 @@ export const KEYBINDING_GUIDE_SECTIONS: readonly KeybindingGuideSection[] = [
     items: [
       {
         shortcut: "Enter",
-        action: "Send the current message, or interrupt and send sooner while a turn is running",
+        action:
+          "Send the current message, steer an active Codex turn, or interrupt and send sooner while a turn is running",
       },
       {
         shortcut: "Tab",

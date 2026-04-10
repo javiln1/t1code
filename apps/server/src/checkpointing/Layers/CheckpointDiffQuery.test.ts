@@ -89,6 +89,7 @@ describe("CheckpointDiffQueryLive", () => {
   ): ProviderServiceShape => ({
     startSession: () => Effect.die("not implemented"),
     sendTurn: () => Effect.die("not implemented"),
+    steerTurn: () => Effect.die("not implemented"),
     interruptTurn: () => Effect.die("not implemented"),
     respondToRequest: () => Effect.die("not implemented"),
     respondToUserInput: () => Effect.die("not implemented"),

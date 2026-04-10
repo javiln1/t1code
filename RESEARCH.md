@@ -17,3 +17,21 @@
 - Use a scheduled GitHub Actions workflow to create or update a PR that merges `maria-rcks/t1code` into this fork.
 - Use a separate scheduled workflow to open an issue when a new `pingdotgg/t3code` release appears upstream.
 - Keep local customization work on `main` or feature branches, then review upstream sync PRs as they arrive.
+
+## Codex Steering Findings
+
+- OpenAI's open-source Codex repo exposes a real app-server RPC for same-turn steering: `turn/steer`.
+- The relevant upstream implementation lives in:
+  - `codex-rs/app-server/src/codex_message_processor.rs`
+  - `sdk/python/src/codex_app_server/client.py`
+  - `docs/tui-chat-composer.md`
+- Codex distinguishes between:
+  - immediate same-turn steering via `turn/steer`
+  - queued follow-ups that wait until the current turn settles
+  - rejected steers for non-steerable turn kinds like review/compact
+- `t1code` originally only wired `turn/start` and `turn/interrupt` through its provider/orchestration layer, so deeper parity required adding a distinct steer command/event path instead of overloading turn start.
+
+## Steering Guardrails
+
+- Do not fake "real steering" by only changing TUI keybindings. Codex parity needs a separate provider call, not just queue plus interrupt behavior.
+- Do not assume all providers support same-turn steering. Codex does; the Claude adapter in this repo does not.

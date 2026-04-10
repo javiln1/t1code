@@ -16,5 +16,6 @@
 - [x] Verify launcher build plus repo fmt/lint/typecheck after adding it.
 - [x] Diagnose and fix the `Watch T3 Code Releases` workflow failure caused by repo issues being disabled.
 - [x] Implement Codex-inspired steering/queuing in the TUI flow.
+- [x] Add true Codex-backed `turn/steer` support end-to-end while keeping queued follow-up fallback.
 - [ ] Add slash-command UX similar to Claude Code, including visible command discovery.
 - [ ] Add skills/MCP/context-oriented slash commands on top of the slash-command system.

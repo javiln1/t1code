@@ -70,3 +70,23 @@
   - `bun fmt` passed
   - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
   - `bun typecheck` passed
+- Added a true Codex steering path after inspecting the open-source Codex app-server protocol:
+  - upstream Codex exposes `turn/steer` alongside `turn/start` and `turn/interrupt`
+  - this fork now mirrors that with a new `thread.turn.steer` orchestration command/event and a `providerService.steerTurn(...)` path
+- Server/provider files updated for real steering:
+  - `apps/server/src/codexAppServerManager.ts`
+  - `apps/server/src/provider/Layers/CodexAdapter.ts`
+  - `apps/server/src/provider/Layers/ClaudeAdapter.ts`
+  - `apps/server/src/provider/Layers/ProviderService.ts`
+  - `apps/server/src/orchestration/decider.ts`
+  - `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts`
+  - `apps/server/src/wsServer.ts`
+- TUI behavior updated in `apps/tui/src/ui.tsx`:
+  - `Enter` now sends a real same-turn steer for active Codex turns when `activeTurnId` is available
+  - `Tab` still queues follow-ups for after the current turn
+  - non-Codex or non-steerable flows still fall back to the queued follow-up behavior
+- Verification for the true steering pass completed:
+  - `bunx vitest run packages/contracts/src/provider.test.ts packages/contracts/src/orchestration.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/provider/Layers/ProviderService.test.ts apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts apps/tui/src/keyboardBehavior.test.ts apps/tui/src/composerQueue.test.ts apps/tui/src/composerAction.test.ts` passed
+  - `bun fmt` passed
+  - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
+  - `bun typecheck` passed

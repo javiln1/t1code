@@ -7,6 +7,7 @@ import type {
   ProviderRuntimeEvent,
   ProviderSendTurnInput,
   ProviderSession,
+  ProviderSteerTurnInput,
   ProviderTurnStartResult,
 } from "@t3tools/contracts";
 import {
@@ -109,6 +110,26 @@ function makeFakeCodexAdapter(provider: ProviderKind = "codex") {
       Effect.void,
   );
 
+  const steerTurn = vi.fn(
+    (
+      input: ProviderSteerTurnInput,
+    ): Effect.Effect<ProviderTurnStartResult, ProviderAdapterError> => {
+      if (!sessions.has(input.threadId)) {
+        return Effect.fail(
+          new ProviderAdapterSessionNotFoundError({
+            provider,
+            threadId: input.threadId,
+          }),
+        );
+      }
+
+      return Effect.succeed({
+        threadId: input.threadId,
+        turnId: input.expectedTurnId,
+      });
+    },
+  );
+
   const respondToRequest = vi.fn(
     (
       _threadId: ThreadId,
@@ -179,6 +200,7 @@ function makeFakeCodexAdapter(provider: ProviderKind = "codex") {
     },
     startSession,
     sendTurn,
+    steerTurn,
     interruptTurn,
     respondToRequest,
     respondToUserInput,
@@ -212,6 +234,7 @@ function makeFakeCodexAdapter(provider: ProviderKind = "codex") {
     updateSession,
     startSession,
     sendTurn,
+    steerTurn,
     interruptTurn,
     respondToRequest,
     respondToUserInput,

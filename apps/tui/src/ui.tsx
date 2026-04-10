@@ -6379,6 +6379,78 @@ export function App({
     },
   );
 
+  const sendSteerComposerSubmission = useEffectEvent(
+    async (input: {
+      thread: ThreadReadModel;
+      text: string;
+      mentions: readonly ComposerMention[];
+      pendingAttachments: readonly ComposerImageAttachment[];
+      submissionAttachments: ReadonlyArray<{
+        type: "image";
+        name: string;
+        mimeType: string;
+        sizeBytes: number;
+        dataUrl: string;
+      }>;
+    }): Promise<boolean> => {
+      const activeTurnId = input.thread.session?.activeTurnId;
+      if (!activeTurnId) {
+        return false;
+      }
+
+      const messageId = newMessageId();
+      const createdAt = nowIso();
+      setPendingSends((current) => [
+        ...current,
+        {
+          threadId: input.thread.id,
+          messageId,
+          text: input.text,
+          mentions: input.mentions.map(cloneComposerMention),
+          attachments: input.pendingAttachments.map((attachment) => ({ ...attachment })),
+          createdAt,
+          visibleUntil: Date.now() + SEND_PLACEHOLDER_MIN_DURATION_MS,
+        },
+      ]);
+
+      try {
+        await dispatch({
+          type: "thread.turn.steer",
+          commandId: newCommandId(),
+          threadId: input.thread.id as never,
+          expectedTurnId: activeTurnId as never,
+          message: {
+            messageId,
+            role: "user",
+            text: input.text,
+            attachments: input.submissionAttachments,
+          },
+          createdAt,
+        });
+      } catch (error) {
+        setPendingSends((current) => current.filter((entry) => entry.messageId !== messageId));
+        setStatus("Steer failed");
+        logger.log("composer.steerFailed", {
+          threadId: input.thread.id,
+          activeTurnId,
+          length: input.text.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      }
+
+      setSelectedThreadId(input.thread.id);
+      clearComposerAfterDispatch(input.thread.id);
+      setStatus("Steer sent");
+      logger.log("composer.steered", {
+        threadId: input.thread.id,
+        activeTurnId,
+        length: input.text.length,
+      });
+      return true;
+    },
+  );
+
   async function sendPrompt() {
     const rawComposerValue = readComposerValue();
     const trimmedComposerValue = rawComposerValue.trim();
@@ -6452,11 +6524,36 @@ export function App({
         composerAttachments,
         resolvedSubmission.attachments,
       );
+      const submissionAttachments = pendingAttachments.map((attachment) => ({
+        type: "image" as const,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        dataUrl: attachment.dataUrl,
+      }));
       if (showPlanFollowUpPrompt && latestProposedPlan && activeThread) {
         const followUp = resolvePlanFollowUpSubmission({
           draftText: trimmed,
           planMarkdown: latestProposedPlan.planMarkdown,
         });
+        if (
+          activeThreadIsRunning &&
+          activeThread.session?.providerName === "codex" &&
+          activeThread.session.activeTurnId
+        ) {
+          const steered = await sendSteerComposerSubmission({
+            thread: activeThread,
+            text: followUp.text,
+            mentions: [],
+            pendingAttachments: [],
+            submissionAttachments: [],
+          });
+          if (steered) {
+            setSelectedProjectId(projectId);
+            setDraftInteractionMode(followUp.interactionMode);
+          }
+          return;
+        }
         const messageId = newMessageId();
         const createdAt = nowIso();
         setPendingSends((current) => [
@@ -6531,13 +6628,24 @@ export function App({
       if (!trimmed && pendingAttachments.length === 0) {
         return;
       }
-      const submissionAttachments = pendingAttachments.map((attachment) => ({
-        type: "image" as const,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-        dataUrl: attachment.dataUrl,
-      }));
+      if (
+        activeThread &&
+        activeThreadIsRunning &&
+        activeThread.session?.providerName === "codex" &&
+        activeThread.session.activeTurnId
+      ) {
+        const steered = await sendSteerComposerSubmission({
+          thread: activeThread,
+          text: trimmed,
+          mentions: composerMentions,
+          pendingAttachments,
+          submissionAttachments,
+        });
+        if (steered && activeProjectId) {
+          setSelectedProjectId(activeProjectId);
+        }
+        return;
+      }
       const inferredSourceProposedPlan =
         activeThread &&
         latestProposedPlan &&
@@ -7335,12 +7443,18 @@ export function App({
     activeThreadIsRunning,
     hasSendableContent: composerHasSendableContent,
   });
+  const activeThreadCanSteer =
+    activeThreadIsRunning &&
+    activeThread?.session?.providerName === "codex" &&
+    Boolean(activeThread.session.activeTurnId);
   const composerQueueHint =
     activeThreadIsRunning &&
     composerHasSendableContent &&
     !activePendingApproval &&
     activePendingProgress === null
-      ? "Enter interrupts and sends sooner. Tab queues for after the current turn."
+      ? activeThreadCanSteer
+        ? "Enter steers the current turn. Tab queues for after it finishes."
+        : "Enter interrupts and sends sooner. Tab queues for after the current turn."
       : null;
   const composerTraits = composerTraitsLabel(
     draftProvider,
@@ -9954,7 +10068,9 @@ export function App({
                           ) {
                             if (!key.shift) {
                               key.preventDefault();
-                              if (activeThreadIsRunning && composerHasSendableContent) {
+                              if (activeThreadCanSteer && composerHasSendableContent) {
+                                void sendPrompt();
+                              } else if (activeThreadIsRunning && composerHasSendableContent) {
                                 queueCurrentComposerSubmission({ interruptAfterQueue: true });
                               } else if (composerPrimaryAction === "send") {
                                 void sendPrompt();
@@ -9994,7 +10110,9 @@ export function App({
                           if (imagePasteInFlight || activePendingApproval) {
                             return;
                           }
-                          if (activeThreadIsRunning && composerHasSendableContent) {
+                          if (activeThreadCanSteer && composerHasSendableContent) {
+                            void sendPrompt();
+                          } else if (activeThreadIsRunning && composerHasSendableContent) {
                             queueCurrentComposerSubmission({ interruptAfterQueue: true });
                           } else if (composerPrimaryAction === "send") {
                             void sendPrompt();
@@ -10183,7 +10301,9 @@ export function App({
                               if (imagePasteInFlight) {
                                 return;
                               }
-                              if (activeThreadIsRunning && composerHasSendableContent) {
+                              if (activeThreadCanSteer && composerHasSendableContent) {
+                                void sendPrompt();
+                              } else if (activeThreadIsRunning && composerHasSendableContent) {
                                 queueCurrentComposerSubmission({ interruptAfterQueue: true });
                               } else if (composerPrimaryAction === "send") {
                                 void sendPrompt();

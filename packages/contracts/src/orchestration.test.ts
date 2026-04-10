@@ -11,6 +11,7 @@ import {
   OrchestrationSession,
   ProjectCreateCommand,
   ThreadTurnStartCommand,
+  ClientOrchestrationCommand,
   ThreadCreatedPayload,
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
@@ -20,6 +21,7 @@ const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffI
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
 const decodeThreadTurnStartCommand = Schema.decodeUnknownEffect(ThreadTurnStartCommand);
+const decodeClientOrchestrationCommand = Schema.decodeUnknownEffect(ClientOrchestrationCommand);
 const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
   ThreadTurnStartRequestedPayload,
 );
@@ -212,6 +214,35 @@ it.effect("accepts a source proposed plan reference in thread.turn.start", () =>
       threadId: "thread-1",
       planId: "plan-1",
     });
+  }),
+);
+
+it.effect("accepts thread.turn.steer client commands with upload attachments", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeClientOrchestrationCommand({
+      type: "thread.turn.steer",
+      commandId: "cmd-turn-steer",
+      threadId: "thread-1",
+      expectedTurnId: "turn-1",
+      message: {
+        messageId: "msg-steer",
+        role: "user",
+        text: "tighten the answer",
+        attachments: [
+          {
+            type: "image",
+            name: "diagram.png",
+            mimeType: "image/png",
+            sizeBytes: 16,
+            dataUrl: "data:image/png;base64,Zm9v",
+          },
+        ],
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(parsed.type, "thread.turn.steer");
+    assert.strictEqual(parsed.expectedTurnId, "turn-1");
+    assert.strictEqual(parsed.message.attachments[0]?.name, "diagram.png");
   }),
 );
 

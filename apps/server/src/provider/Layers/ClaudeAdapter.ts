@@ -30,6 +30,7 @@ import {
   type ProviderSendTurnInput,
   type ProviderSession,
   type ProviderUserInputAnswers,
+  type ProviderSteerTurnInput,
   type RuntimeContentStreamKind,
   RuntimeItemId,
   RuntimeRequestId,
@@ -2789,6 +2790,15 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
         };
       });
 
+    const steerTurn: ClaudeAdapterShape["steerTurn"] = (_input: ProviderSteerTurnInput) =>
+      Effect.fail(
+        new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "turn/steer",
+          detail: "Claude runtime does not support same-turn steering.",
+        }),
+      );
+
     const interruptTurn: ClaudeAdapterShape["interruptTurn"] = (threadId, _turnId) =>
       Effect.gen(function* () {
         const context = yield* requireSession(threadId);
@@ -2898,6 +2908,7 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
       },
       startSession,
       sendTurn,
+      steerTurn,
       interruptTurn,
       readThread,
       rollbackThread,

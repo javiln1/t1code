@@ -20,6 +20,7 @@ import {
   CodexAppServerManager,
   type CodexAppServerStartSessionInput,
   type CodexAppServerSendTurnInput,
+  type CodexAppServerSteerTurnInput,
 } from "../../codexAppServerManager.ts";
 import { ServerConfig } from "../../config.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
@@ -57,6 +58,13 @@ class FakeCodexManager extends CodexAppServerManager {
 
   public interruptTurnImpl = vi.fn(
     async (_threadId: ThreadId, _turnId?: TurnId): Promise<void> => undefined,
+  );
+
+  public steerTurnImpl = vi.fn(
+    async (_input: CodexAppServerSteerTurnInput): Promise<ProviderTurnStartResult> => ({
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-1"),
+    }),
   );
 
   public readThreadImpl = vi.fn(async (_threadId: ThreadId) => ({
@@ -97,6 +105,10 @@ class FakeCodexManager extends CodexAppServerManager {
 
   override interruptTurn(threadId: ThreadId, turnId?: TurnId): Promise<void> {
     return this.interruptTurnImpl(threadId, turnId);
+  }
+
+  override steerTurn(input: CodexAppServerSteerTurnInput): Promise<ProviderTurnStartResult> {
+    return this.steerTurnImpl(input);
   }
 
   override readThread(threadId: ThreadId) {
@@ -273,6 +285,28 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
         model: "gpt-5.3-codex",
         effort: "high",
         serviceTier: "fast",
+      });
+    }),
+  );
+
+  it.effect("maps steer requests to codex turn/steer input", () =>
+    Effect.gen(function* () {
+      sessionErrorManager.steerTurnImpl.mockClear();
+      const adapter = yield* CodexAdapter;
+
+      yield* Effect.ignore(
+        adapter.steerTurn({
+          threadId: asThreadId("sess-missing"),
+          expectedTurnId: asTurnId("turn-active"),
+          input: "tighten the plan",
+          attachments: [],
+        }),
+      );
+
+      assert.deepStrictEqual(sessionErrorManager.steerTurnImpl.mock.calls[0]?.[0], {
+        threadId: asThreadId("sess-missing"),
+        expectedTurnId: asTurnId("turn-active"),
+        input: "tighten the plan",
       });
     }),
   );

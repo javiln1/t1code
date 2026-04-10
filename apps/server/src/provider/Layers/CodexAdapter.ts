@@ -7,10 +7,12 @@
  * @module CodexAdapterLive
  */
 import {
+  type ChatAttachment,
   type CanonicalItemType,
   type CanonicalRequestType,
   type ProviderEvent,
   type ProviderRuntimeEvent,
+  type ProviderSteerTurnInput,
   type ProviderUserInputAnswers,
   RuntimeItemId,
   RuntimeRequestId,
@@ -33,6 +35,7 @@ import {
 import { CodexAdapter, type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import {
   CodexAppServerManager,
+  type CodexAppServerSteerTurnInput,
   type CodexAppServerStartSessionInput,
 } from "../../codexAppServerManager.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
@@ -1312,6 +1315,47 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
         }),
     );
 
+    const resolveCodexAttachments = (
+      input: {
+        readonly threadId: ThreadId;
+        readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
+      },
+      method: "turn/start" | "turn/steer",
+    ) =>
+      Effect.forEach(
+        input.attachments ?? [],
+        (attachment) =>
+          Effect.gen(function* () {
+            const attachmentPath = resolveAttachmentPath({
+              attachmentsDir: serverConfig.attachmentsDir,
+              attachment,
+            });
+            if (!attachmentPath) {
+              return yield* toRequestError(
+                input.threadId,
+                method,
+                new Error(`Invalid attachment id '${attachment.id}'.`),
+              );
+            }
+            const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ProviderAdapterRequestError({
+                    provider: PROVIDER,
+                    method,
+                    detail: toMessage(cause, "Failed to read attachment file."),
+                    cause,
+                  }),
+              ),
+            );
+            return {
+              type: "image" as const,
+              url: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
+            };
+          }),
+        { concurrency: 1 },
+      );
+
     const startSession: CodexAdapterShape["startSession"] = (input) => {
       if (input.provider !== undefined && input.provider !== PROVIDER) {
         return Effect.fail(
@@ -1348,39 +1392,7 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
 
     const sendTurn: CodexAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
-        const codexAttachments = yield* Effect.forEach(
-          input.attachments ?? [],
-          (attachment) =>
-            Effect.gen(function* () {
-              const attachmentPath = resolveAttachmentPath({
-                attachmentsDir: serverConfig.attachmentsDir,
-                attachment,
-              });
-              if (!attachmentPath) {
-                return yield* toRequestError(
-                  input.threadId,
-                  "turn/start",
-                  new Error(`Invalid attachment id '${attachment.id}'.`),
-                );
-              }
-              const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ProviderAdapterRequestError({
-                      provider: PROVIDER,
-                      method: "turn/start",
-                      detail: toMessage(cause, "Failed to read attachment file."),
-                      cause,
-                    }),
-                ),
-              );
-              return {
-                type: "image" as const,
-                url: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
-              };
-            }),
-          { concurrency: 1 },
-        );
+        const codexAttachments = yield* resolveCodexAttachments(input, "turn/start");
 
         return yield* Effect.tryPromise({
           try: () => {
@@ -1400,6 +1412,29 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
             return manager.sendTurn(managerInput);
           },
           catch: (cause) => toRequestError(input.threadId, "turn/start", cause),
+        }).pipe(
+          Effect.map((result) => ({
+            ...result,
+            threadId: input.threadId,
+          })),
+        );
+      });
+
+    const steerTurn: CodexAdapterShape["steerTurn"] = (input: ProviderSteerTurnInput) =>
+      Effect.gen(function* () {
+        const codexAttachments = yield* resolveCodexAttachments(input, "turn/steer");
+
+        return yield* Effect.tryPromise({
+          try: () => {
+            const managerInput: CodexAppServerSteerTurnInput = {
+              threadId: input.threadId,
+              expectedTurnId: input.expectedTurnId,
+              ...(input.input !== undefined ? { input: input.input } : {}),
+              ...(codexAttachments.length > 0 ? { attachments: codexAttachments } : {}),
+            };
+            return manager.steerTurn(managerInput);
+          },
+          catch: (cause) => toRequestError(input.threadId, "turn/steer", cause),
         }).pipe(
           Effect.map((result) => ({
             ...result,
@@ -1530,6 +1565,7 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
       },
       startSession,
       sendTurn,
+      steerTurn,
       interruptTurn,
       readThread,
       rollbackThread,

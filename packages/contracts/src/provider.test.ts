@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 
-import { ProviderSendTurnInput, ProviderSessionStartInput } from "./provider";
+import {
+  ProviderSendTurnInput,
+  ProviderSessionStartInput,
+  ProviderSteerTurnInput,
+} from "./provider";
 
 const decodeProviderSessionStartInput = Schema.decodeUnknownSync(ProviderSessionStartInput);
 const decodeProviderSendTurnInput = Schema.decodeUnknownSync(ProviderSendTurnInput);
+const decodeProviderSteerTurnInput = Schema.decodeUnknownSync(ProviderSteerTurnInput);
 
 describe("ProviderSessionStartInput", () => {
   it("accepts codex-compatible payloads", () => {
@@ -108,5 +113,19 @@ describe("ProviderSendTurnInput", () => {
 
     expect(parsed.modelOptions?.claudeAgent?.effort).toBe("ultrathink");
     expect(parsed.modelOptions?.claudeAgent?.fastMode).toBe(true);
+  });
+});
+
+describe("ProviderSteerTurnInput", () => {
+  it("accepts expected turn ids for same-turn steering", () => {
+    const parsed = decodeProviderSteerTurnInput({
+      threadId: "thread-1",
+      expectedTurnId: "turn-1",
+      input: "keep it brief",
+      attachments: [],
+    });
+
+    expect(parsed.expectedTurnId).toBe("turn-1");
+    expect(parsed.input).toBe("keep it brief");
   });
 });

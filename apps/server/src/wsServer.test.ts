@@ -1274,6 +1274,11 @@ describe("WebSocket Server", () => {
           threadId,
           turnId: asTurnId("provider-turn-1"),
         }),
+      steerTurn: ({ threadId, expectedTurnId }) =>
+        Effect.succeed({
+          threadId,
+          turnId: expectedTurnId,
+        }),
       interruptTurn: () => unsupported(),
       respondToRequest: () => unsupported(),
       respondToUserInput: () => unsupported(),

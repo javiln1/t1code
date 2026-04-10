@@ -124,6 +124,13 @@ export interface CodexAppServerSendTurnInput {
   readonly interactionMode?: ProviderInteractionMode;
 }
 
+export interface CodexAppServerSteerTurnInput {
+  readonly threadId: ThreadId;
+  readonly expectedTurnId: TurnId;
+  readonly input?: string;
+  readonly attachments?: ReadonlyArray<{ type: "image"; url: string }>;
+}
+
 export interface CodexAppServerStartSessionInput {
   readonly threadId: ThreadId;
   readonly provider?: "codex";
@@ -175,6 +182,31 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function buildCodexTurnInput(input: {
+  readonly input?: string;
+  readonly attachments?: ReadonlyArray<{ type: "image"; url: string }>;
+}): Array<{ type: "text"; text: string; text_elements: [] } | { type: "image"; url: string }> {
+  const turnInput: Array<
+    { type: "text"; text: string; text_elements: [] } | { type: "image"; url: string }
+  > = [];
+  if (input.input) {
+    turnInput.push({
+      type: "text",
+      text: input.input,
+      text_elements: [],
+    });
+  }
+  for (const attachment of input.attachments ?? []) {
+    if (attachment.type === "image") {
+      turnInput.push({
+        type: "image",
+        url: attachment.url,
+      });
+    }
+  }
+  return turnInput;
 }
 
 export function readCodexAccountSnapshot(response: unknown): CodexAccountSnapshot {
@@ -736,24 +768,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     const context = this.requireSession(input.threadId);
     context.collabReceiverTurns.clear();
 
-    const turnInput: Array<
-      { type: "text"; text: string; text_elements: [] } | { type: "image"; url: string }
-    > = [];
-    if (input.input) {
-      turnInput.push({
-        type: "text",
-        text: input.input,
-        text_elements: [],
-      });
-    }
-    for (const attachment of input.attachments ?? []) {
-      if (attachment.type === "image") {
-        turnInput.push({
-          type: "image",
-          url: attachment.url,
-        });
-      }
-    }
+    const turnInput = buildCodexTurnInput(input);
     if (turnInput.length === 0) {
       throw new Error("Turn input must include text or attachments.");
     }
@@ -817,6 +832,54 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     const turnIdRaw = this.readString(turn, "id");
     if (!turnIdRaw) {
       throw new Error("turn/start response did not include a turn id.");
+    }
+    const turnId = TurnId.makeUnsafe(turnIdRaw);
+
+    this.updateSession(context, {
+      status: "running",
+      activeTurnId: turnId,
+      ...(context.session.resumeCursor !== undefined
+        ? { resumeCursor: context.session.resumeCursor }
+        : {}),
+    });
+
+    return {
+      threadId: context.session.threadId,
+      turnId,
+      ...(context.session.resumeCursor !== undefined
+        ? { resumeCursor: context.session.resumeCursor }
+        : {}),
+    };
+  }
+
+  async steerTurn(input: CodexAppServerSteerTurnInput): Promise<ProviderTurnStartResult> {
+    const context = this.requireSession(input.threadId);
+    context.collabReceiverTurns.clear();
+
+    const turnInput = buildCodexTurnInput(input);
+    if (turnInput.length === 0) {
+      throw new Error("Steer input must include text or attachments.");
+    }
+
+    const providerThreadId = readResumeThreadId({
+      threadId: context.session.threadId,
+      runtimeMode: context.session.runtimeMode,
+      resumeCursor: context.session.resumeCursor,
+    });
+    if (!providerThreadId) {
+      throw new Error("Session is missing provider resume thread id.");
+    }
+
+    const response = await this.sendRequest(context, "turn/steer", {
+      threadId: providerThreadId,
+      expectedTurnId: input.expectedTurnId,
+      input: turnInput,
+    });
+
+    const turn = this.readObject(this.readObject(response), "turn");
+    const turnIdRaw = this.readString(turn, "id");
+    if (!turnIdRaw) {
+      throw new Error("turn/steer response did not include a turn id.");
     }
     const turnId = TurnId.makeUnsafe(turnIdRaw);
 
