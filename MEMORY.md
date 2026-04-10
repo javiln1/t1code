@@ -112,3 +112,18 @@
   - `t1refresh` completed successfully
   - `T1CODE_HEADLESS=1 t1code` passed and wrote `/Users/javilopez/Projects/t1code/.tmp/global-slash-headless-frame.txt`
 - User supplied a local Claude Code source reference for follow-up UX parity work: `/Users/javilopez/Downloads/src 2`
+- Updated visible branding to `Nexus Code` without renaming internal package/config/storage identifiers:
+  - TUI sidebar title now shows `Nexus Code` (or `Nexus` when collapsed)
+  - quit dialog now says `Quit Nexus Code?`
+  - startup permission error text now says `Nexus Code`
+  - the Bun runtime error from `apps/tui/bin/t1code.js` now says `Nexus Code requires Bun...`
+  - the Ghostty launcher builder now defaults to `Nexus Code.app`
+- Built the renamed launcher app at `/Users/javilopez/Applications/Nexus Code.app`.
+- Verification for the visible-branding pass completed:
+  - `bunx vitest run apps/tui/src/responsiveLayout.test.ts apps/tui/src/serverSupervisor.test.ts apps/tui/src/composerCommands.test.ts apps/tui/src/keyboardBehavior.test.ts packages/client-core/src/slashCommands.test.ts` passed
+  - `bun fmt` passed
+  - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
+  - `bun typecheck` passed
+  - source headless startup passed and wrote `/Users/javilopez/Projects/t1code/.tmp/nexus-source-headless-frame.txt`
+  - global `t1code` startup passed and wrote `/Users/javilopez/Projects/t1code/.tmp/nexus-global-headless-frame.txt`
+  - `t1refresh` completed successfully after the rename

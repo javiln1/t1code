@@ -18,7 +18,7 @@ describe("resolveTuiResponsiveLayout", () => {
         showSidebar: true,
         showWindowDots: true,
         showSidebarAlphaBadge: true,
-        sidebarTitle: "T1 Code",
+        sidebarTitle: "Nexus Code",
         showHeaderProjectBadge: true,
         showComposerModeLabels: true,
         showComposerModelLabel: true,
@@ -43,7 +43,7 @@ describe("resolveTuiResponsiveLayout", () => {
         showSidebar: false,
         showWindowDots: false,
         showSidebarAlphaBadge: false,
-        sidebarTitle: "T1",
+        sidebarTitle: "Nexus",
         showHeaderProjectBadge: false,
         showComposerModeLabels: true,
         showComposerModelLabel: true,
@@ -87,7 +87,7 @@ describe("resolveTuiResponsiveLayout", () => {
         sidebarCollapsed: false,
         showSidebar: true,
         showWindowDots: true,
-        sidebarTitle: "T1 Code",
+        sidebarTitle: "Nexus Code",
       }),
     );
   });
@@ -102,7 +102,7 @@ describe("resolveTuiResponsiveLayout", () => {
       expect.objectContaining({
         showSidebar: true,
         showWindowDots: true,
-        sidebarTitle: "T1 Code",
+        sidebarTitle: "Nexus Code",
         showComposerModeLabels: true,
         showComposerModelLabel: true,
         showComposerTraitsLabel: true,
@@ -141,7 +141,7 @@ describe("resolveTuiResponsiveLayout", () => {
         sidebarCollapsed: false,
         showSidebar: true,
         showWindowDots: true,
-        sidebarTitle: "T1 Code",
+        sidebarTitle: "Nexus Code",
       }),
     );
   });

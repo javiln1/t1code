@@ -20,3 +20,4 @@
 - [x] Add slash-command UX similar to Claude Code, including visible command discovery.
 - [ ] Add skills/MCP/context-oriented slash commands on top of the slash-command system.
 - [ ] Add Claude-style previous-prompt recall plus a terminal-safe plan-mode shortcut.
+- [x] Rename visible TUI and launcher branding to `Nexus Code` while keeping backend identifiers stable.

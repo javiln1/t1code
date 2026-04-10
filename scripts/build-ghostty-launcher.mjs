@@ -19,7 +19,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
 const homeDir = os.homedir();
 
-const appName = process.env.T1CODE_LAUNCHER_NAME?.trim() || "T1Code";
+const appName = process.env.T1CODE_LAUNCHER_NAME?.trim() || "Nexus Code";
 const bundleId = process.env.T1CODE_LAUNCHER_BUNDLE_ID?.trim() || "com.javiln1.t1code.launcher";
 const launcherDir = process.env.T1CODE_LAUNCHER_DIR?.trim() || path.join(homeDir, "Applications");
 const launcherAppPath = path.join(launcherDir, `${appName}.app`);

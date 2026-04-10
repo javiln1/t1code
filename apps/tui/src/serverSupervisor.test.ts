@@ -287,7 +287,7 @@ describe("startServerSupervisor", () => {
           env: {},
         },
       ),
-    ).rejects.toThrow("T1Code could not start because a required path is not writable.");
+    ).rejects.toThrow("Nexus Code could not start because a required path is not writable.");
 
     await vi.advanceTimersByTimeAsync(25);
 

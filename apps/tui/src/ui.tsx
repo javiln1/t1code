@@ -4129,7 +4129,7 @@ export function App({
 
   const requestAppExit = useCallback(() => {
     setConfirmDialog({
-      title: "Quit T1 Code?",
+      title: "Quit Nexus Code?",
       body: "Press Ctrl-C again or Enter to quit. Press Escape to stay in the session.",
       confirmLabel: "Quit",
       escapeBehavior: "cancel",
