@@ -28,3 +28,15 @@ export function parseApprovalResponseCommand(text: string): ProviderApprovalDeci
       return null;
   }
 }
+
+export function applySlashCommandTemplate(text: string, template: string): string {
+  const lines = text.split("\n");
+  const firstLine = lines[0] ?? "";
+  if (/^\s*\/[a-z0-9-]*\s*$/i.test(firstLine)) {
+    const leadingWhitespace = /^\s*/.exec(firstLine)?.[0] ?? "";
+    lines[0] = `${leadingWhitespace}${template}`;
+    return lines.join("\n");
+  }
+
+  return template;
+}

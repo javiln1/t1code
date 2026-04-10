@@ -90,3 +90,25 @@
   - `bun fmt` passed
   - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
   - `bun typecheck` passed
+- Compared `t1code`'s composer flow with the open-source Codex slash-command UI:
+  - upstream references used: `codex-rs/tui/src/slash_command.rs`, `codex-rs/tui/src/bottom_pane/slash_commands.rs`, `codex-rs/tui/src/bottom_pane/command_popup.rs`, and `docs/tui-chat-composer.md`
+  - `t1code` already had a shared slash registry in `packages/client-core/src/slashCommands.ts`, so the missing piece was TUI discovery/autocomplete rather than a new command backend
+- Added visible slash-command discovery to `apps/tui/src/ui.tsx`:
+  - typing `/` in the composer now opens a command picker
+  - `↑` / `↓` and `Ctrl+K` / `Ctrl+J` move through matches
+  - `Enter` or `Tab` inserts the selected command template into the composer
+  - actual command execution still flows through the existing slash handler on submit
+- Added `applySlashCommandTemplate(...)` in `apps/tui/src/composerCommands.ts` with tests, and documented the picker shortcut in `apps/tui/src/keyboardBehavior.ts`.
+- Runtime caveat discovered during verification:
+  - the current `@opentui/react` / `react-reconciler` stack in this repo does not support `useEffectEvent` at runtime even though React exports it
+  - source and global TUI startup both crashed until the queued-send / steer callbacks were rewritten to stable `useCallback` usage
+  - avoid introducing `useEffectEvent` in this TUI until the renderer stack is upgraded
+- Verification for the slash-command pass completed:
+  - `bunx vitest run apps/tui/src/composerCommands.test.ts apps/tui/src/keyboardBehavior.test.ts packages/client-core/src/slashCommands.test.ts` passed
+  - `bun fmt` passed
+  - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
+  - `bun typecheck` passed
+  - `T1CODE_HEADLESS=1 bun run apps/tui/src/index.tsx` passed and wrote `/Users/javilopez/Projects/t1code/.tmp/source-slash-headless-frame.txt`
+  - `t1refresh` completed successfully
+  - `T1CODE_HEADLESS=1 t1code` passed and wrote `/Users/javilopez/Projects/t1code/.tmp/global-slash-headless-frame.txt`
+- User supplied a local Claude Code source reference for follow-up UX parity work: `/Users/javilopez/Downloads/src 2`

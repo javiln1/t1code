@@ -35,3 +35,21 @@
 
 - Do not fake "real steering" by only changing TUI keybindings. Codex parity needs a separate provider call, not just queue plus interrupt behavior.
 - Do not assume all providers support same-turn steering. Codex does; the Claude adapter in this repo does not.
+
+## Slash Command Findings
+
+- `t1code` already had the command registry, parsing, and matching logic in `packages/client-core/src/slashCommands.ts`.
+- The missing parity surface was in the TUI:
+  - no visible `/` command popup
+  - no keyboard navigation over command matches
+  - no command-template insertion flow before submit
+- Codex's open-source TUI keeps the registry/filtering and the popup in sync:
+  - `codex-rs/tui/src/slash_command.rs`
+  - `codex-rs/tui/src/bottom_pane/slash_commands.rs`
+  - `codex-rs/tui/src/bottom_pane/command_popup.rs`
+- For this fork, the right move was to reuse the existing shared slash registry and add a TUI picker on top, rather than duplicating command definitions in `apps/tui`.
+
+## TUI Runtime Guardrail
+
+- Do not use `useEffectEvent` in this TUI until `@opentui/react` / `react-reconciler` is upgraded to a runtime that supports it.
+- In the current stack, `useEffectEvent` compiles but crashes both source and packaged startup with `resolveDispatcher(...).useEffectEvent is not a function`.

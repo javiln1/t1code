@@ -75,5 +75,11 @@ describe("keyboardBehavior", () => {
         action: "Clear the current draft",
       }),
     );
+    expect(composerSection?.items).toContainEqual(
+      expect.objectContaining({
+        shortcut: "/ then ↑ / ↓ / Enter",
+        action: "Open the slash command picker and insert the selected command template",
+      }),
+    );
   });
 });

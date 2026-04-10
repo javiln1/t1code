@@ -75,6 +75,8 @@ import {
   hasActionableProposedPlan,
   PROVIDER_OPTIONS,
   SLASH_COMMAND_DEFINITIONS,
+  extractSlashCommandQuery,
+  matchSlashCommands,
   newCommandId,
   newMessageId,
   newProjectId,
@@ -86,6 +88,7 @@ import {
   resolveThreadStatusPill,
   type ChatAttachment,
   type GitActionMenuItem,
+  type SlashCommandDefinition,
   type ThreadStatusPill,
   type TimelineEntry,
   WsTransport,
@@ -105,12 +108,12 @@ import {
   supportsClaudeThinkingToggle,
   supportsClaudeUltrathinkKeyword,
 } from "@t3tools/shared/model";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import packageJson from "../package.json";
 import { resolveTuiPaths } from "./config";
 import { resolveComposerPrimaryAction } from "./composerAction";
-import { parseStandaloneComposerModeCommand } from "./composerCommands";
+import { applySlashCommandTemplate, parseStandaloneComposerModeCommand } from "./composerCommands";
 import { formatReasoningEffortLabel, truncateToolbarLabel } from "./composerControlLabels";
 import {
   enqueueQueuedComposerSubmission,
@@ -1380,6 +1383,47 @@ function PathSuggestionRow(props: {
   );
 }
 
+function SlashCommandSuggestionRow(props: {
+  command: SlashCommandDefinition;
+  active?: boolean;
+  onHover?: () => void;
+  onPress: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const active = props.active || hovered;
+  return (
+    <box
+      onMouseOver={() => {
+        setHovered(true);
+        props.onHover?.();
+      }}
+      onMouseOut={() => setHovered(false)}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation?.();
+        props.onPress();
+      }}
+      style={{
+        backgroundColor: active ? PALETTE.controlActive : PALETTE.surfaceAlt,
+        paddingLeft: 1,
+        paddingRight: 1,
+        minHeight: 2,
+        flexDirection: "column",
+      }}
+    >
+      <box style={{ flexDirection: "row", alignItems: "center", minHeight: 1 }}>
+        <text
+          content={props.command.usage}
+          style={{ fg: active ? PALETTE.text : PALETTE.muted, marginRight: 1 }}
+        />
+        <box style={{ flexGrow: 1 }} />
+        <text content={`/${props.command.command}`} style={{ fg: PALETTE.subtle }} />
+      </box>
+      <text content={props.command.description} style={{ fg: PALETTE.subtle }} />
+    </box>
+  );
+}
+
 function MessageMentions(props: {
   mentions: readonly ComposerMention[];
   align?: "flex-start" | "flex-end";
@@ -1926,6 +1970,7 @@ const PLAN_MODE_NEXT_ICON = "";
 const PLAN_MODE_SUBMIT_ICON = "󰄬";
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 8;
 const COMPOSER_PATH_SUGGESTION_MAX_ITEMS = 5;
+const COMPOSER_SLASH_COMMAND_MAX_ITEMS = 8;
 const SEND_ANIMATION_INTERVAL_MS = 90;
 const SEND_PLACEHOLDER_MIN_DURATION_MS = 650;
 const QUEUED_COMPOSER_PREVIEW_MAX_LENGTH = 88;
@@ -2712,6 +2757,7 @@ export function App({
   const [pathSuggestionEntries, setPathSuggestionEntries] = useState<ProjectEntry[]>([]);
   const [pathSuggestionIndex, setPathSuggestionIndex] = useState(0);
   const [pathSuggestionsLoading, setPathSuggestionsLoading] = useState(false);
+  const [slashCommandIndex, setSlashCommandIndex] = useState(0);
   const [projectPathPromptOpen, setProjectPathPromptOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>();
   const [selectedThreadId, setSelectedThreadId] = useState<string | undefined>();
@@ -4074,12 +4120,12 @@ export function App({
     return composerRef.current?.plainText ?? composerValueRef.current ?? composer;
   }
 
-  function resetComposerTextarea(nextValue: string) {
+  const resetComposerTextarea = useCallback((nextValue: string) => {
     invalidateDeferredComposerSync(deferredComposerSyncRef.current);
     composerValueRef.current = nextValue;
     setComposer(nextValue);
     setComposerResetKey((current) => current + 1);
-  }
+  }, []);
 
   const requestAppExit = useCallback(() => {
     setConfirmDialog({
@@ -4114,7 +4160,7 @@ export function App({
       }));
     }
     setStatus("Composer cleared");
-  }, [activePendingProgress, activePendingUserInput]);
+  }, [activePendingProgress, activePendingUserInput, resetComposerTextarea]);
 
   function isComposerFocused(): boolean {
     return focusArea === "composer" && !imagePasteInFlight && !activePendingApproval;
@@ -4171,6 +4217,17 @@ export function App({
     setPathSuggestionIndex(0);
     setFocusArea("composer");
     setStatus("File tagged");
+    setTimeout(() => {
+      composerRef.current?.focus();
+    }, 0);
+  }
+
+  function applyComposerSlashCommand(command: SlashCommandDefinition) {
+    const nextComposer = applySlashCommandTemplate(readComposerValue(), command.template);
+    resetComposerTextarea(nextComposer);
+    setSlashCommandIndex(0);
+    setFocusArea("composer");
+    setStatus(`/${command.command}`);
     setTimeout(() => {
       composerRef.current?.focus();
     }, 0);
@@ -4341,7 +4398,7 @@ export function App({
     setComposerMentions(nextDraft?.mentions ?? []);
     setComposerAttachments(nextDraft?.attachments ?? []);
     setComposerAttachmentDeleteArmed(false);
-  }, [activeThreadId, prefsReady]);
+  }, [activeThreadId, prefsReady, resetComposerTextarea]);
 
   useEffect(() => {
     if (!prefsReady || !activeThreadId) {
@@ -4376,6 +4433,7 @@ export function App({
     activePendingUserInput,
     activePendingUserInput?.requestId,
     activePendingUserInputAnswers,
+    resetComposerTextarea,
   ]);
 
   useEffect(() => {
@@ -4410,42 +4468,6 @@ export function App({
       pruneQueuedComposerSubmissions(current, liveThreadIds),
     );
   }, [allThreads]);
-
-  useEffect(() => {
-    if (
-      !activeThread ||
-      activeThreadIsRunning ||
-      activePendingApproval ||
-      activePendingUserInput ||
-      imagePasteInFlight ||
-      queuedAutosendInFlightRef.current
-    ) {
-      return;
-    }
-
-    const nextQueuedSubmission = activeQueuedComposerSubmissions[0];
-    if (!nextQueuedSubmission) {
-      return;
-    }
-
-    queuedAutosendInFlightRef.current = true;
-    void (async () => {
-      const sent = await sendQueuedComposerSubmission(activeThread, nextQueuedSubmission);
-      if (sent) {
-        setQueuedComposerSubmissionsByThreadId(
-          (current) => shiftQueuedComposerSubmission(current, activeThread.id).next,
-        );
-      }
-      queuedAutosendInFlightRef.current = false;
-    })();
-  }, [
-    activePendingApproval,
-    activePendingUserInput,
-    activeQueuedComposerSubmissions,
-    activeThread,
-    activeThreadIsRunning,
-    imagePasteInFlight,
-  ]);
 
   const syncTimelineScrollState = useCallback(() => {
     const scrollbox = timelineScrollRef.current;
@@ -5551,11 +5573,14 @@ export function App({
     }
   });
 
-  async function dispatch(command: ClientOrchestrationCommand) {
-    if (!api) return;
-    logger.log("command.dispatch", { type: command.type });
-    await api.orchestration.dispatchCommand(command);
-  }
+  const dispatch = useCallback(
+    async (command: ClientOrchestrationCommand) => {
+      if (!api) return;
+      logger.log("command.dispatch", { type: command.type });
+      await api.orchestration.dispatchCommand(command);
+    },
+    [api, logger],
+  );
 
   function openMainView(view: Exclude<MainView, "thread">) {
     closeSidebarContextMenu();
@@ -5864,48 +5889,51 @@ export function App({
     return threadId;
   }
 
-  async function persistThreadSettingsForNextTurn(input: {
-    thread?: ThreadReadModel | null;
-    threadId: string;
-    createdAt: string;
-    model: string;
-    runtimeMode: RuntimeMode;
-    interactionMode: ProviderInteractionMode;
-  }) {
-    const thread = input.thread ?? activeThread;
-    if (!thread) {
-      return;
-    }
+  const persistThreadSettingsForNextTurn = useCallback(
+    async (input: {
+      thread?: ThreadReadModel | null;
+      threadId: string;
+      createdAt: string;
+      model: string;
+      runtimeMode: RuntimeMode;
+      interactionMode: ProviderInteractionMode;
+    }) => {
+      const thread = input.thread ?? activeThread;
+      if (!thread) {
+        return;
+      }
 
-    if (input.model !== thread.model) {
-      await dispatch({
-        type: "thread.meta.update",
-        commandId: newCommandId(),
-        threadId: input.threadId as never,
-        model: input.model,
-      });
-    }
+      if (input.model !== thread.model) {
+        await dispatch({
+          type: "thread.meta.update",
+          commandId: newCommandId(),
+          threadId: input.threadId as never,
+          model: input.model,
+        });
+      }
 
-    if (input.runtimeMode !== thread.runtimeMode) {
-      await dispatch({
-        type: "thread.runtime-mode.set",
-        commandId: newCommandId(),
-        threadId: input.threadId as never,
-        runtimeMode: input.runtimeMode,
-        createdAt: input.createdAt,
-      });
-    }
+      if (input.runtimeMode !== thread.runtimeMode) {
+        await dispatch({
+          type: "thread.runtime-mode.set",
+          commandId: newCommandId(),
+          threadId: input.threadId as never,
+          runtimeMode: input.runtimeMode,
+          createdAt: input.createdAt,
+        });
+      }
 
-    if (input.interactionMode !== thread.interactionMode) {
-      await dispatch({
-        type: "thread.interaction-mode.set",
-        commandId: newCommandId(),
-        threadId: input.threadId as never,
-        interactionMode: input.interactionMode,
-        createdAt: input.createdAt,
-      });
-    }
-  }
+      if (input.interactionMode !== thread.interactionMode) {
+        await dispatch({
+          type: "thread.interaction-mode.set",
+          commandId: newCommandId(),
+          threadId: input.threadId as never,
+          interactionMode: input.interactionMode,
+          createdAt: input.createdAt,
+        });
+      }
+    },
+    [activeThread, dispatch],
+  );
 
   async function respondToApproval(decision: ProviderApprovalDecision) {
     if (!activeThreadId || !activePendingApproval) {
@@ -6188,19 +6216,22 @@ export function App({
     }
   }
 
-  function clearComposerAfterDispatch(threadId: string) {
-    resetComposerTextarea("");
-    setComposerMentions([]);
-    setComposerAttachments([]);
-    setComposerDraftsByThreadId((current) => {
-      if (!current[threadId]) {
-        return current;
-      }
-      const next = { ...current };
-      delete next[threadId];
-      return next;
-    });
-  }
+  const clearComposerAfterDispatch = useCallback(
+    (threadId: string) => {
+      resetComposerTextarea("");
+      setComposerMentions([]);
+      setComposerAttachments([]);
+      setComposerDraftsByThreadId((current) => {
+        if (!current[threadId]) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[threadId];
+        return next;
+      });
+    },
+    [resetComposerTextarea],
+  );
 
   function queueCurrentComposerSubmission(options: { interruptAfterQueue: boolean }) {
     const rawComposerValue = readComposerValue();
@@ -6271,7 +6302,7 @@ export function App({
     }
   }
 
-  const sendQueuedComposerSubmission = useEffectEvent(
+  const sendQueuedComposerSubmission = useCallback(
     async (
       thread: ThreadReadModel,
       queuedSubmission: QueuedComposerSubmissionState,
@@ -6377,9 +6408,18 @@ export function App({
         sendInFlightRef.current = false;
       }
     },
+    [
+      appSettings.enableAssistantStreaming,
+      dispatch,
+      imagePasteInFlight,
+      logger,
+      paths.homeDir,
+      persistThreadSettingsForNextTurn,
+      providerOptionsForDispatch,
+    ],
   );
 
-  const sendSteerComposerSubmission = useEffectEvent(
+  const sendSteerComposerSubmission = useCallback(
     async (input: {
       thread: ThreadReadModel;
       text: string;
@@ -6449,7 +6489,45 @@ export function App({
       });
       return true;
     },
+    [clearComposerAfterDispatch, dispatch, logger],
   );
+
+  useEffect(() => {
+    if (
+      !activeThread ||
+      activeThreadIsRunning ||
+      activePendingApproval ||
+      activePendingUserInput ||
+      imagePasteInFlight ||
+      queuedAutosendInFlightRef.current
+    ) {
+      return;
+    }
+
+    const nextQueuedSubmission = activeQueuedComposerSubmissions[0];
+    if (!nextQueuedSubmission) {
+      return;
+    }
+
+    queuedAutosendInFlightRef.current = true;
+    void (async () => {
+      const sent = await sendQueuedComposerSubmission(activeThread, nextQueuedSubmission);
+      if (sent) {
+        setQueuedComposerSubmissionsByThreadId(
+          (current) => shiftQueuedComposerSubmission(current, activeThread.id).next,
+        );
+      }
+      queuedAutosendInFlightRef.current = false;
+    })();
+  }, [
+    activePendingApproval,
+    activePendingUserInput,
+    activeQueuedComposerSubmissions,
+    activeThread,
+    activeThreadIsRunning,
+    imagePasteInFlight,
+    sendQueuedComposerSubmission,
+  ]);
 
   async function sendPrompt() {
     const rawComposerValue = readComposerValue();
@@ -7475,6 +7553,14 @@ export function App({
               ? "Start a new thread with a prompt"
               : "Ask for follow-up changes or attach images"
             : COMPOSER_PLACEHOLDER;
+  const slashCommandQuery = extractSlashCommandQuery(composer);
+  const slashCommandMatches = useMemo(
+    () =>
+      slashCommandQuery === null
+        ? []
+        : matchSlashCommands(slashCommandQuery).slice(0, COMPOSER_SLASH_COMMAND_MAX_ITEMS),
+    [slashCommandQuery],
+  );
   const composerPathTrigger = detectTrailingComposerPathTrigger(composer);
   const showPathSuggestions =
     composerIsFocused &&
@@ -7483,6 +7569,13 @@ export function App({
     composerPathTrigger !== null &&
     composerPathTrigger.query.trim().length > 0 &&
     composerSearchCwd !== null;
+  const showSlashCommandSuggestions =
+    composerIsFocused &&
+    !activePendingUserInput &&
+    !activePendingApproval &&
+    !showPathSuggestions &&
+    slashCommandQuery !== null &&
+    slashCommandMatches.length > 0;
   const composerTextareaHeight = estimateComposerTextareaHeight({
     text: composer,
     placeholder: composerPlaceholder,
@@ -7678,7 +7771,14 @@ export function App({
     }
 
     return items;
-  }, [composer, draftModel, draftModelOptions, draftProvider, updateDraftProviderModelOptions]);
+  }, [
+    composer,
+    draftModel,
+    draftModelOptions,
+    draftProvider,
+    resetComposerTextarea,
+    updateDraftProviderModelOptions,
+  ]);
   useEffect(() => {
     if (traitsMenuItems.length === 0) {
       setTraitsMenuIndex(0);
@@ -7733,6 +7833,14 @@ export function App({
       clearTimeout(timer);
     };
   }, [api, composerPathTrigger, composerSearchCwd, logger, showPathSuggestions]);
+
+  useEffect(() => {
+    if (!showSlashCommandSuggestions || slashCommandMatches.length === 0) {
+      setSlashCommandIndex(0);
+      return;
+    }
+    setSlashCommandIndex((current) => Math.min(current, slashCommandMatches.length - 1));
+  }, [showSlashCommandSuggestions, slashCommandMatches]);
 
   useEffect(() => {
     if (overlayMenu === null && overlayAnchor !== null) {
@@ -9696,6 +9804,30 @@ export function App({
                   ) : null}
                 </scrollbox>
 
+                {showSlashCommandSuggestions ? (
+                  <box
+                    style={{
+                      position: "absolute",
+                      left: 2,
+                      right: mainView === "thread" && diffOpen ? 2 : 3,
+                      bottom: Math.max(1, composerDrawerOffset - 1),
+                      backgroundColor: PALETTE.surfaceAlt,
+                      flexDirection: "column",
+                      zIndex: 10,
+                    }}
+                  >
+                    {slashCommandMatches.map((command, index) => (
+                      <SlashCommandSuggestionRow
+                        key={command.command}
+                        command={command}
+                        active={index === slashCommandIndex}
+                        onHover={() => setSlashCommandIndex(index)}
+                        onPress={() => applyComposerSlashCommand(command)}
+                      />
+                    ))}
+                  </box>
+                ) : null}
+
                 {showPathSuggestions ? (
                   <box
                     style={{
@@ -10031,6 +10163,40 @@ export function App({
                             void attachClipboardImage();
                             return;
                           }
+                          if (showSlashCommandSuggestions && slashCommandMatches.length > 0) {
+                            if (key.name === "up" || (key.ctrl && key.name === "k")) {
+                              key.preventDefault();
+                              setSlashCommandIndex((current) => Math.max(0, current - 1));
+                              return;
+                            }
+                            if (key.name === "down" || (key.ctrl && key.name === "j")) {
+                              key.preventDefault();
+                              setSlashCommandIndex((current) =>
+                                Math.min(slashCommandMatches.length - 1, current + 1),
+                              );
+                              return;
+                            }
+                            if (
+                              (!key.shift &&
+                                (key.name === "return" ||
+                                  key.name === "enter" ||
+                                  key.name === "kpenter" ||
+                                  key.name === "linefeed")) ||
+                              (key.name === "tab" &&
+                                !key.shift &&
+                                !key.ctrl &&
+                                !key.meta &&
+                                !key.super)
+                            ) {
+                              const selected =
+                                slashCommandMatches[slashCommandIndex] ?? slashCommandMatches[0];
+                              if (selected) {
+                                key.preventDefault();
+                                applyComposerSlashCommand(selected);
+                                return;
+                              }
+                            }
+                          }
                           if (showPathSuggestions && pathSuggestionEntries.length > 0) {
                             if (key.name === "up" || (key.ctrl && key.name === "k")) {
                               key.preventDefault();
@@ -10109,6 +10275,14 @@ export function App({
                         onSubmit={() => {
                           if (imagePasteInFlight || activePendingApproval) {
                             return;
+                          }
+                          if (showSlashCommandSuggestions && slashCommandMatches.length > 0) {
+                            const selected =
+                              slashCommandMatches[slashCommandIndex] ?? slashCommandMatches[0];
+                            if (selected) {
+                              applyComposerSlashCommand(selected);
+                              return;
+                            }
                           }
                           if (activeThreadCanSteer && composerHasSendableContent) {
                             void sendPrompt();

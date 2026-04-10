@@ -79,6 +79,10 @@ export const KEYBINDING_GUIDE_SECTIONS: readonly KeybindingGuideSection[] = [
         note: "With an empty draft, Tab still changes focus.",
       },
       {
+        shortcut: "/ then ↑ / ↓ / Enter",
+        action: "Open the slash command picker and insert the selected command template",
+      },
+      {
         shortcut: "Shift+Enter",
         action: "Insert a newline",
       },
