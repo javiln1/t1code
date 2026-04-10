@@ -136,3 +136,20 @@
   - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
   - `bun typecheck` passed
   - `t1refresh` completed successfully
+- Diagnosed a path-preservation bug that made Nexus Code appear frozen:
+  - the active `Kostify` project in `/Users/javilopez/.t1/userdata/state.sqlite` pointed to `/Users/javilopez/Downloads/Nexus/2. CLIENTS /Kostify`
+  - the real directory on disk is `/Users/javilopez/Downloads/Nexus/2. CLIENTS /Kostify ` with a trailing space
+  - the app kept retrying snapshot loads against the missing trimmed path and spammed `/Users/javilopez/.config/t1code/tui.log` until it grew past 1 GB
+- Root cause in the codebase:
+  - `apps/server/src/wsServer.ts` called `workspaceRoot.trim()` before path resolution
+  - several contract schemas used `TrimmedNonEmptyString` for filesystem paths like `workspaceRoot`, `cwd`, and `worktreePath`
+  - that made valid paths ending in spaces impossible to persist or round-trip correctly
+- Fixed path-bearing contracts to preserve whitespace with `NonEmptyString`, and updated `apps/server/src/wsServer.ts` to reject blank paths without trimming away real trailing spaces.
+- Added verification coverage for the path fix:
+  - `packages/contracts/src/orchestration.test.ts` now proves project paths preserve whitespace
+  - `packages/contracts/src/terminal.test.ts` now proves `cwd` preserves whitespace
+  - `apps/server/src/wsServer.test.ts` now proves `project.create` preserves a workspace path ending in a space
+- Local recovery completed:
+  - corrected the saved `Kostify` `workspace_root` in `/Users/javilopez/.t1/userdata/state.sqlite`
+  - truncated `/Users/javilopez/.config/t1code/tui.log` back to 0 bytes
+  - `T1CODE_HEADLESS=1 t1code` passed afterward and wrote `/Users/javilopez/Projects/t1code/.tmp/nexus-post-path-fix-headless-frame.txt`

@@ -53,3 +53,14 @@
 
 - Do not use `useEffectEvent` in this TUI until `@opentui/react` / `react-reconciler` is upgraded to a runtime that supports it.
 - In the current stack, `useEffectEvent` compiles but crashes both source and packaged startup with `resolveDispatcher(...).useEffectEvent is not a function`.
+
+## Path Whitespace Findings
+
+- This repo originally treated filesystem paths like generic trimmed text:
+  - `apps/server/src/wsServer.ts` normalized project roots with `workspaceRoot.trim()`
+  - several contracts used `TrimmedNonEmptyString` for path-bearing fields such as `workspaceRoot`, `cwd`, and `worktreePath`
+- That breaks real macOS directories whose names end in spaces. In this session it corrupted the valid folder `/Users/javilopez/Downloads/Nexus/2. CLIENTS /Kostify ` into the missing path `/Users/javilopez/Downloads/Nexus/2. CLIENTS /Kostify`.
+- The right guardrail is:
+  - preserve raw filesystem path whitespace at the contracts/server boundary
+  - reject blank-only input explicitly
+  - do not use `TrimmedNonEmptyString` for path/cwd/worktree fields

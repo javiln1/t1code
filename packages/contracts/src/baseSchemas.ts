@@ -1,5 +1,7 @@
 import { Schema } from "effect";
 
+// Preserve filesystem paths exactly as entered while still rejecting empty values.
+export const NonEmptyString = Schema.String.check(Schema.isNonEmpty());
 export const TrimmedString = Schema.Trim;
 export const TrimmedNonEmptyString = TrimmedString.check(Schema.isNonEmpty());
 

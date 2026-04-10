@@ -7,6 +7,7 @@ import {
   EventId,
   IsoDateTime,
   MessageId,
+  NonEmptyString,
   NonNegativeInt,
   ProjectId,
   ProviderItemId,
@@ -45,12 +46,12 @@ export type ProviderSandboxMode = typeof ProviderSandboxMode.Type;
 export const DEFAULT_PROVIDER_KIND: ProviderKind = "codex";
 
 export const CodexProviderStartOptions = Schema.Struct({
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-  homePath: Schema.optional(TrimmedNonEmptyString),
+  binaryPath: Schema.optional(NonEmptyString),
+  homePath: Schema.optional(NonEmptyString),
 });
 
 export const ClaudeProviderStartOptions = Schema.Struct({
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
+  binaryPath: Schema.optional(NonEmptyString),
   permissionMode: Schema.optional(TrimmedNonEmptyString),
   maxThinkingTokens: Schema.optional(NonNegativeInt),
 });
@@ -143,7 +144,7 @@ export type ProjectScript = typeof ProjectScript.Type;
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
-  workspaceRoot: TrimmedNonEmptyString,
+  workspaceRoot: NonEmptyString,
   defaultModel: Schema.NullOr(TrimmedNonEmptyString),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
@@ -209,7 +210,7 @@ export const OrchestrationSession = Schema.Struct({
 export type OrchestrationSession = typeof OrchestrationSession.Type;
 
 export const OrchestrationCheckpointFile = Schema.Struct({
-  path: TrimmedNonEmptyString,
+  path: NonEmptyString,
   kind: TrimmedNonEmptyString,
   additions: NonNegativeInt,
   deletions: NonNegativeInt,
@@ -305,7 +306,7 @@ export const ProjectCreateCommand = Schema.Struct({
   commandId: CommandId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
-  workspaceRoot: TrimmedNonEmptyString,
+  workspaceRoot: NonEmptyString,
   defaultModel: Schema.optional(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
 });
@@ -315,7 +316,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   commandId: CommandId,
   projectId: ProjectId,
   title: Schema.optional(TrimmedNonEmptyString),
-  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  workspaceRoot: Schema.optional(NonEmptyString),
   defaultModel: Schema.optional(TrimmedNonEmptyString),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
 });
@@ -338,7 +339,7 @@ const ThreadCreateCommand = Schema.Struct({
     Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreePath: Schema.NullOr(NonEmptyString),
   createdAt: IsoDateTime,
 });
 
@@ -355,7 +356,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
   model: Schema.optional(TrimmedNonEmptyString),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  worktreePath: Schema.optional(Schema.NullOr(NonEmptyString)),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -640,7 +641,7 @@ export const OrchestrationActorKind = Schema.Literals(["client", "server", "prov
 export const ProjectCreatedPayload = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
-  workspaceRoot: TrimmedNonEmptyString,
+  workspaceRoot: NonEmptyString,
   defaultModel: Schema.NullOr(TrimmedNonEmptyString),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
@@ -650,7 +651,7 @@ export const ProjectCreatedPayload = Schema.Struct({
 export const ProjectMetaUpdatedPayload = Schema.Struct({
   projectId: ProjectId,
   title: Schema.optional(TrimmedNonEmptyString),
-  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  workspaceRoot: Schema.optional(NonEmptyString),
   defaultModel: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   updatedAt: IsoDateTime,
@@ -671,7 +672,7 @@ export const ThreadCreatedPayload = Schema.Struct({
     Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreePath: Schema.NullOr(NonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -686,7 +687,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
   model: Schema.optional(TrimmedNonEmptyString),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  worktreePath: Schema.optional(Schema.NullOr(NonEmptyString)),
   updatedAt: IsoDateTime,
 });
 

@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { TrimmedNonEmptyString } from "./baseSchemas";
+import { NonEmptyString, TrimmedNonEmptyString } from "./baseSchemas";
 import { ProviderModelOptions } from "./model";
 import {
   ApprovalRequestId,
@@ -36,7 +36,7 @@ export const ProviderSession = Schema.Struct({
   provider: ProviderKind,
   status: ProviderSessionStatus,
   runtimeMode: RuntimeMode,
-  cwd: Schema.optional(TrimmedNonEmptyString),
+  cwd: Schema.optional(NonEmptyString),
   model: Schema.optional(TrimmedNonEmptyString),
   threadId: ThreadId,
   resumeCursor: Schema.optional(Schema.Unknown),
@@ -50,7 +50,7 @@ export type ProviderSession = typeof ProviderSession.Type;
 export const ProviderSessionStartInput = Schema.Struct({
   threadId: ThreadId,
   provider: Schema.optional(ProviderKind),
-  cwd: Schema.optional(TrimmedNonEmptyString),
+  cwd: Schema.optional(NonEmptyString),
   model: Schema.optional(TrimmedNonEmptyString),
   modelOptions: Schema.optional(ProviderModelOptions),
   resumeCursor: Schema.optional(Schema.Unknown),

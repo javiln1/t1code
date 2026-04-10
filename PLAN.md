@@ -22,3 +22,4 @@
 - [ ] Add Claude-style previous-prompt recall plus a terminal-safe plan-mode shortcut.
 - [x] Rename visible TUI and launcher branding to `Nexus Code` while keeping backend identifiers stable.
 - [x] Wire `Shift+Tab` to toggle the composer between chat and plan mode.
+- [x] Preserve trailing-space workspace paths instead of trimming them at the contracts/server boundary.

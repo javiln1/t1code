@@ -59,6 +59,16 @@ describe("TerminalOpenInput", () => {
     expect(parsed.terminalId).toBe(DEFAULT_TERMINAL_ID);
   });
 
+  it("preserves cwd whitespace exactly", () => {
+    const parsed = decodeSync(TerminalOpenInput, {
+      threadId: "thread-1",
+      cwd: "/tmp/project ",
+      cols: 100,
+      rows: 24,
+    });
+    expect(parsed.cwd).toBe("/tmp/project ");
+  });
+
   it("accepts optional env overrides", () => {
     const parsed = decodeSync(TerminalOpenInput, {
       threadId: "thread-1",

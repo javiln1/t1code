@@ -322,7 +322,12 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     readonly command: ClientOrchestrationCommand;
   }) {
     const normalizeProjectWorkspaceRoot = Effect.fnUntraced(function* (workspaceRoot: string) {
-      const normalizedWorkspaceRoot = path.resolve(yield* expandHomePath(workspaceRoot.trim()));
+      if (workspaceRoot.trim().length === 0) {
+        return yield* new RouteRequestError({
+          message: "Project directory cannot be empty",
+        });
+      }
+      const normalizedWorkspaceRoot = path.resolve(yield* expandHomePath(workspaceRoot));
       const workspaceStat = yield* fileSystem
         .stat(normalizedWorkspaceRoot)
         .pipe(Effect.catch(() => Effect.succeed(null)));

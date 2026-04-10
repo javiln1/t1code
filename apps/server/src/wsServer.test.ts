@@ -1484,6 +1484,46 @@ describe("WebSocket Server", () => {
     expect(response.error).toBeDefined();
   });
 
+  it("preserves trailing spaces in project workspace roots", async () => {
+    server = await createTestServer({ cwd: "/test" });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const parentDir = makeTempDir("t3code-ws-project-space-parent-");
+    const workspaceRoot = path.join(parentDir, "spacey ");
+    fs.mkdirSync(workspaceRoot);
+
+    const createdAt = new Date().toISOString();
+    const response = await sendRequest(ws, ORCHESTRATION_WS_METHODS.dispatchCommand, {
+      type: "project.create",
+      commandId: "cmd-ws-project-create-spacey",
+      projectId: "project-spacey",
+      title: "Spacey",
+      workspaceRoot,
+      defaultModel: "gpt-5-codex",
+      createdAt,
+    });
+
+    expect(response.error).toBeUndefined();
+
+    const snapshotResponse = await sendRequest(ws, ORCHESTRATION_WS_METHODS.getSnapshot, undefined);
+    expect(snapshotResponse.error).toBeUndefined();
+    const snapshot = snapshotResponse.result as {
+      projects: Array<{ id: string; workspaceRoot: string }>;
+    };
+    expect(snapshot.projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "project-spacey",
+          workspaceRoot,
+        }),
+      ]),
+    );
+  });
+
   it("handles invalid JSON gracefully", async () => {
     server = await createTestServer({ cwd: "/test" });
     const addr = server.address();

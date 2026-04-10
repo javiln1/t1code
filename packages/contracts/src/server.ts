@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { IsoDateTime, TrimmedNonEmptyString } from "./baseSchemas";
+import { IsoDateTime, NonEmptyString, TrimmedNonEmptyString } from "./baseSchemas";
 import { KeybindingRule, ResolvedKeybindingsConfig } from "./keybindings";
 import { EditorId } from "./editor";
 import { ProviderKind } from "./orchestration";
@@ -46,8 +46,8 @@ export type ServerProviderStatus = typeof ServerProviderStatus.Type;
 const ServerProviderStatuses = Schema.Array(ServerProviderStatus);
 
 export const ServerConfig = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
-  keybindingsConfigPath: TrimmedNonEmptyString,
+  cwd: NonEmptyString,
+  keybindingsConfigPath: NonEmptyString,
   keybindings: ResolvedKeybindingsConfig,
   issues: ServerConfigIssues,
   providers: ServerProviderStatuses,

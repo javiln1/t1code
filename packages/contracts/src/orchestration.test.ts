@@ -69,7 +69,7 @@ it.effect("rejects thread turn diff when fromTurnCount > toTurnCount", () =>
   }),
 );
 
-it.effect("trims branded ids and command string fields at decode boundaries", () =>
+it.effect("trims ids and titles but preserves workspace path whitespace", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeProjectCreateCommand({
       type: "project.create",
@@ -83,7 +83,7 @@ it.effect("trims branded ids and command string fields at decode boundaries", ()
     assert.strictEqual(parsed.commandId, "cmd-1");
     assert.strictEqual(parsed.projectId, "project-1");
     assert.strictEqual(parsed.title, "Project Title");
-    assert.strictEqual(parsed.workspaceRoot, "/tmp/workspace");
+    assert.strictEqual(parsed.workspaceRoot, " /tmp/workspace ");
     assert.strictEqual(parsed.defaultModel, "gpt-5.2");
   }),
 );
