@@ -79,6 +79,10 @@ export const KEYBINDING_GUIDE_SECTIONS: readonly KeybindingGuideSection[] = [
         note: "With an empty draft, Tab still changes focus.",
       },
       {
+        shortcut: "Shift+Tab",
+        action: "Toggle the composer between chat and plan mode",
+      },
+      {
         shortcut: "/ then ↑ / ↓ / Enter",
         action: "Open the slash command picker and insert the selected command template",
       },
@@ -143,4 +147,22 @@ export function shouldClearComposerOnCtrlC(input: {
   readonly hasComposerText: boolean;
 }): boolean {
   return isCtrlC(input) && input.composerFocused && input.hasComposerText;
+}
+
+export function shouldToggleComposerModeOnShiftTab(input: {
+  readonly keyName: string | undefined;
+  readonly shift: boolean | undefined;
+  readonly ctrl?: boolean | undefined;
+  readonly meta?: boolean | undefined;
+  readonly super?: boolean | undefined;
+  readonly composerFocused: boolean;
+}): boolean {
+  return (
+    input.composerFocused &&
+    input.keyName === "tab" &&
+    input.shift === true &&
+    input.ctrl !== true &&
+    input.meta !== true &&
+    input.super !== true
+  );
 }

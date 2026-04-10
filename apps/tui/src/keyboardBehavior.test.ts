@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { KEYBINDING_GUIDE_SECTIONS, isCtrlC, shouldClearComposerOnCtrlC } from "./keyboardBehavior";
+import {
+  KEYBINDING_GUIDE_SECTIONS,
+  isCtrlC,
+  shouldClearComposerOnCtrlC,
+  shouldToggleComposerModeOnShiftTab,
+} from "./keyboardBehavior";
 
 describe("keyboardBehavior", () => {
   it("detects ctrl-c", () => {
@@ -45,6 +50,34 @@ describe("keyboardBehavior", () => {
     ).toBe(false);
   });
 
+  it("detects shift-tab for composer mode switching", () => {
+    expect(
+      shouldToggleComposerModeOnShiftTab({
+        keyName: "tab",
+        shift: true,
+        composerFocused: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("ignores non-composer or modified shift-tab presses", () => {
+    expect(
+      shouldToggleComposerModeOnShiftTab({
+        keyName: "tab",
+        shift: true,
+        composerFocused: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldToggleComposerModeOnShiftTab({
+        keyName: "tab",
+        shift: true,
+        ctrl: true,
+        composerFocused: true,
+      }),
+    ).toBe(false);
+  });
+
   it("documents the updated quit flow", () => {
     const globalSection = KEYBINDING_GUIDE_SECTIONS.find((section) => section.title === "Global");
     const composerSection = KEYBINDING_GUIDE_SECTIONS.find(
@@ -67,6 +100,12 @@ describe("keyboardBehavior", () => {
       expect.objectContaining({
         shortcut: "Ctrl+C / Enter",
         action: "Confirm quit from the exit prompt",
+      }),
+    );
+    expect(composerSection?.items).toContainEqual(
+      expect.objectContaining({
+        shortcut: "Shift+Tab",
+        action: "Toggle the composer between chat and plan mode",
       }),
     );
     expect(composerSection?.items).toContainEqual(

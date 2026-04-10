@@ -132,7 +132,12 @@ import {
   type ResolvedComposerImageAttachment,
 } from "./composerSubmit";
 import { saveClipboardImageToFile } from "./clipboardImage";
-import { KEYBINDING_GUIDE_SECTIONS, isCtrlC, shouldClearComposerOnCtrlC } from "./keyboardBehavior";
+import {
+  KEYBINDING_GUIDE_SECTIONS,
+  isCtrlC,
+  shouldClearComposerOnCtrlC,
+  shouldToggleComposerModeOnShiftTab,
+} from "./keyboardBehavior";
 import { createT1Logger } from "./log";
 import { resolveUserMessageBubbleWidth } from "./messageLayout";
 import {
@@ -10152,6 +10157,20 @@ export function App({
                             source: key.source,
                             sequence: key.sequence,
                           });
+                          if (
+                            shouldToggleComposerModeOnShiftTab({
+                              keyName: key.name,
+                              shift: key.shift,
+                              ctrl: key.ctrl,
+                              meta: key.meta,
+                              super: key.super,
+                              composerFocused: true,
+                            })
+                          ) {
+                            key.preventDefault();
+                            toggleInteractionMode();
+                            return;
+                          }
                           if (
                             !activePendingUserInput &&
                             key.ctrl &&

@@ -127,3 +127,12 @@
   - source headless startup passed and wrote `/Users/javilopez/Projects/t1code/.tmp/nexus-source-headless-frame.txt`
   - global `t1code` startup passed and wrote `/Users/javilopez/Projects/t1code/.tmp/nexus-global-headless-frame.txt`
   - `t1refresh` completed successfully after the rename
+- Diagnosed the missing mode-switch shortcut: `Shift+Tab` was never wired to interaction-mode toggling, while plain `Tab` only handled queue/send/focus behavior.
+- Added a dedicated composer shortcut path so `Shift+Tab` now toggles between chat and plan mode.
+- Added `shouldToggleComposerModeOnShiftTab(...)` in `apps/tui/src/keyboardBehavior.ts` with tests, and documented the shortcut in the keybinding guide.
+- Verification for the `Shift+Tab` fix completed:
+  - `bunx vitest run apps/tui/src/keyboardBehavior.test.ts apps/tui/src/responsiveLayout.test.ts apps/tui/src/serverSupervisor.test.ts apps/tui/src/composerCommands.test.ts packages/client-core/src/slashCommands.test.ts` passed
+  - `bun fmt` passed
+  - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
+  - `bun typecheck` passed
+  - `t1refresh` completed successfully
