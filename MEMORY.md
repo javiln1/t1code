@@ -45,3 +45,28 @@
   - Add Claude Code-style slash commands with visible discovery.
   - Add slash-command support for skills, MCP config, context, and related actions.
 - `T1Code.app` was re-registered with Launch Services and Spotlight metadata refreshed.
+
+## 2026-04-10
+
+- Diagnosed repeated failures in `.github/workflows/watch-t3code-releases.yml` by inspecting GitHub Actions logs for runs `24233330357` and `24244657999`.
+- Root cause was repository settings, not workflow code: `javiln1/t1code` had GitHub Issues disabled (`has_issues: false`), but the release watcher is designed to create a tracking issue for each new upstream `pingdotgg/t3code` release.
+- Re-enabled GitHub Issues on `javiln1/t1code` via the GitHub API and manually dispatched the workflow to verify recovery.
+- Verification result:
+  - Workflow run `24244657999` completed successfully.
+  - Issue `#1` was created: `Track upstream T3 Code release v0.0.15`.
+- Compared the current TUI against the open-source OpenAI Codex repo at `https://github.com/openai/codex`, especially:
+  - `docs/tui-chat-composer.md`
+  - `codex-rs/tui/src/bottom_pane/pending_input_preview.rs`
+  - `codex-rs/tui/src/chatwidget.rs`
+- Important implementation note: Codex's native "pending steer after next tool call" behavior depends on runtime/TUI support that `t1code` does not currently expose through its server/provider protocol, so the first pass in this fork mirrors the user-facing workflow in the TUI without changing provider APIs.
+- Added `apps/tui/src/composerQueue.ts` plus tests to manage queued follow-up messages per thread.
+- Updated the TUI composer in `apps/tui/src/ui.tsx` so:
+  - `Tab` queues a follow-up message while a thread is busy, or sends immediately when idle.
+  - `Enter` while busy queues the draft and interrupts the current turn so the queued message autosends sooner.
+  - queued follow-ups are previewed in the timeline and autosend after the selected thread settles.
+- Updated `apps/tui/src/keyboardBehavior.ts` to document the new composer shortcuts.
+- Verification for the steering/queueing pass completed:
+  - `bunx vitest run apps/tui/src/composerQueue.test.ts apps/tui/src/composerAction.test.ts apps/tui/src/keyboardBehavior.test.ts` passed
+  - `bun fmt` passed
+  - `bun lint` passed with the same 4 pre-existing warnings in `packages/client-core/src/wsTransport.ts`
+  - `bun typecheck` passed

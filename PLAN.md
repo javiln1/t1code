@@ -14,6 +14,7 @@
 - [x] Add a tracked Ghostty launcher builder to the repo.
 - [x] Build a local `~/Applications/T1Code.app` launcher for one-click opening.
 - [x] Verify launcher build plus repo fmt/lint/typecheck after adding it.
-- [ ] Implement Codex-style steering/queuing in the TUI flow.
+- [x] Diagnose and fix the `Watch T3 Code Releases` workflow failure caused by repo issues being disabled.
+- [x] Implement Codex-inspired steering/queuing in the TUI flow.
 - [ ] Add slash-command UX similar to Claude Code, including visible command discovery.
 - [ ] Add skills/MCP/context-oriented slash commands on top of the slash-command system.

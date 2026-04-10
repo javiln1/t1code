@@ -70,7 +70,12 @@ export const KEYBINDING_GUIDE_SECTIONS: readonly KeybindingGuideSection[] = [
     items: [
       {
         shortcut: "Enter",
-        action: "Send the current message",
+        action: "Send the current message, or interrupt and send sooner while a turn is running",
+      },
+      {
+        shortcut: "Tab",
+        action: "Queue the current message after the running turn, or send it when idle",
+        note: "With an empty draft, Tab still changes focus.",
       },
       {
         shortcut: "Shift+Enter",

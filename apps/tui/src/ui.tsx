@@ -105,13 +105,19 @@ import {
   supportsClaudeThinkingToggle,
   supportsClaudeUltrathinkKeyword,
 } from "@t3tools/shared/model";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import packageJson from "../package.json";
 import { resolveTuiPaths } from "./config";
 import { resolveComposerPrimaryAction } from "./composerAction";
 import { parseStandaloneComposerModeCommand } from "./composerCommands";
 import { formatReasoningEffortLabel, truncateToolbarLabel } from "./composerControlLabels";
+import {
+  enqueueQueuedComposerSubmission,
+  pruneQueuedComposerSubmissions,
+  shiftQueuedComposerSubmission,
+  type QueuedComposerSubmission,
+} from "./composerQueue";
 import {
   createDeferredComposerSyncState,
   invalidateDeferredComposerSync,
@@ -251,6 +257,10 @@ type PendingSendPreview = {
   createdAt: string;
   visibleUntil: number;
 };
+type QueuedComposerSubmissionState = QueuedComposerSubmission<
+  ComposerMention,
+  DraftComposerImageAttachment
+>;
 type RendererSelection = {
   getSelectedText(): string;
 };
@@ -1042,6 +1052,17 @@ function stripMentionTokensFromText(input: string): { mentions: ComposerMention[
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return { mentions, body };
+}
+
+function summarizeQueuedComposerPreview(input: string): string {
+  const normalized = input.replace(/\s+/g, " ").trim();
+  if (normalized.length === 0) {
+    return "Image-only message";
+  }
+  if (normalized.length <= QUEUED_COMPOSER_PREVIEW_MAX_LENGTH) {
+    return normalized;
+  }
+  return `${normalized.slice(0, QUEUED_COMPOSER_PREVIEW_MAX_LENGTH - 1).trimEnd()}…`;
 }
 
 function composerTraitsIcon(provider: ProviderKind): string {
@@ -1907,6 +1928,7 @@ const COMPOSER_TEXTAREA_MAX_HEIGHT = 8;
 const COMPOSER_PATH_SUGGESTION_MAX_ITEMS = 5;
 const SEND_ANIMATION_INTERVAL_MS = 90;
 const SEND_PLACEHOLDER_MIN_DURATION_MS = 650;
+const QUEUED_COMPOSER_PREVIEW_MAX_LENGTH = 88;
 const SIDEBAR_STATUS_PULSE_INTERVAL_MS = 260;
 const SIDEBAR_THREAD_TITLE_WIDTH =
   TUI_SIDEBAR_WIDTH -
@@ -2673,7 +2695,11 @@ export function App({
   const [imagePasteInFlight, setImagePasteInFlight] = useState(false);
   const sendInFlightRef = useRef(false);
   const interruptInFlightRef = useRef(false);
+  const queuedAutosendInFlightRef = useRef(false);
   const [pendingSends, setPendingSends] = useState<PendingSendPreview[]>([]);
+  const [queuedComposerSubmissionsByThreadId, setQueuedComposerSubmissionsByThreadId] = useState<
+    Readonly<Record<string, readonly QueuedComposerSubmissionState[]>>
+  >({});
   const [sendAnimationTick, setSendAnimationTick] = useState(0);
   const [sidebarPulseTick, setSidebarPulseTick] = useState(0);
   const [projectPathDraft, setProjectPathDraft] = useState("");
@@ -3351,6 +3377,10 @@ export function App({
         })
         .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt))
     : [];
+  const activeQueuedComposerSubmissions = useMemo(
+    () => (activeThreadId ? (queuedComposerSubmissionsByThreadId[activeThreadId] ?? []) : []),
+    [activeThreadId, queuedComposerSubmissionsByThreadId],
+  );
   const showAssistantTyping = activeThreadIsRunning || activePendingSends.length > 0;
   const latestProposedPlan = activeThread
     ? findLatestProposedPlan(activeThread.proposedPlans, activeThread.latestTurn?.turnId ?? null)
@@ -4373,6 +4403,49 @@ export function App({
       return Object.keys(next).length === Object.keys(current).length ? current : next;
     });
   }, [userInputs]);
+
+  useEffect(() => {
+    const liveThreadIds = new Set(allThreads.map((thread) => thread.id));
+    setQueuedComposerSubmissionsByThreadId((current) =>
+      pruneQueuedComposerSubmissions(current, liveThreadIds),
+    );
+  }, [allThreads]);
+
+  useEffect(() => {
+    if (
+      !activeThread ||
+      activeThreadIsRunning ||
+      activePendingApproval ||
+      activePendingUserInput ||
+      imagePasteInFlight ||
+      queuedAutosendInFlightRef.current
+    ) {
+      return;
+    }
+
+    const nextQueuedSubmission = activeQueuedComposerSubmissions[0];
+    if (!nextQueuedSubmission) {
+      return;
+    }
+
+    queuedAutosendInFlightRef.current = true;
+    void (async () => {
+      const sent = await sendQueuedComposerSubmission(activeThread, nextQueuedSubmission);
+      if (sent) {
+        setQueuedComposerSubmissionsByThreadId(
+          (current) => shiftQueuedComposerSubmission(current, activeThread.id).next,
+        );
+      }
+      queuedAutosendInFlightRef.current = false;
+    })();
+  }, [
+    activePendingApproval,
+    activePendingUserInput,
+    activeQueuedComposerSubmissions,
+    activeThread,
+    activeThreadIsRunning,
+    imagePasteInFlight,
+  ]);
 
   const syncTimelineScrollState = useCallback(() => {
     const scrollbox = timelineScrollRef.current;
@@ -5792,17 +5865,19 @@ export function App({
   }
 
   async function persistThreadSettingsForNextTurn(input: {
+    thread?: ThreadReadModel | null;
     threadId: string;
     createdAt: string;
     model: string;
     runtimeMode: RuntimeMode;
     interactionMode: ProviderInteractionMode;
   }) {
-    if (!activeThread) {
+    const thread = input.thread ?? activeThread;
+    if (!thread) {
       return;
     }
 
-    if (input.model !== activeThread.model) {
+    if (input.model !== thread.model) {
       await dispatch({
         type: "thread.meta.update",
         commandId: newCommandId(),
@@ -5811,7 +5886,7 @@ export function App({
       });
     }
 
-    if (input.runtimeMode !== activeThread.runtimeMode) {
+    if (input.runtimeMode !== thread.runtimeMode) {
       await dispatch({
         type: "thread.runtime-mode.set",
         commandId: newCommandId(),
@@ -5821,7 +5896,7 @@ export function App({
       });
     }
 
-    if (input.interactionMode !== activeThread.interactionMode) {
+    if (input.interactionMode !== thread.interactionMode) {
       await dispatch({
         type: "thread.interaction-mode.set",
         commandId: newCommandId(),
@@ -6113,6 +6188,197 @@ export function App({
     }
   }
 
+  function clearComposerAfterDispatch(threadId: string) {
+    resetComposerTextarea("");
+    setComposerMentions([]);
+    setComposerAttachments([]);
+    setComposerDraftsByThreadId((current) => {
+      if (!current[threadId]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[threadId];
+      return next;
+    });
+  }
+
+  function queueCurrentComposerSubmission(options: { interruptAfterQueue: boolean }) {
+    const rawComposerValue = readComposerValue();
+    const trimmedComposerValue = rawComposerValue.trim();
+    const standaloneModeCommand = parseStandaloneComposerModeCommand(trimmedComposerValue);
+    const slashCommand = parseSlashCommandInput(trimmedComposerValue);
+
+    if (!activeThread || !activeThreadIsRunning) {
+      return;
+    }
+    if (sendInFlightRef.current || imagePasteInFlight) {
+      if (imagePasteInFlight) {
+        setStatus("Wait for image paste to finish");
+      }
+      return;
+    }
+    if (
+      composerAttachments.length === 0 &&
+      composerMentions.length === 0 &&
+      standaloneModeCommand
+    ) {
+      applyDraftInteractionMode(standaloneModeCommand);
+      resetComposerTextarea("");
+      return;
+    }
+    if (composerAttachments.length === 0 && composerMentions.length === 0 && slashCommand) {
+      setStatus("Slash commands cannot be queued while a turn is running");
+      return;
+    }
+    if (activePendingApproval) {
+      setStatus("Resolve approval first");
+      return;
+    }
+    if (activePendingUserInput) {
+      void advanceActivePendingUserInput();
+      return;
+    }
+    if (!composerHasSendableContent) {
+      if (options.interruptAfterQueue) {
+        void interruptActiveTurn();
+      }
+      return;
+    }
+
+    setQueuedComposerSubmissionsByThreadId((current) =>
+      enqueueQueuedComposerSubmission(current, activeThread.id, {
+        text: rawComposerValue,
+        mentions: composerMentions.map(cloneComposerMention),
+        attachments: composerAttachments.map(cloneDraftAttachment),
+        provider: draftProvider,
+        model: draftModel,
+        modelOptions: draftModelOptions,
+        runtimeMode: draftRuntimeMode,
+        interactionMode: draftInteractionMode,
+        queuedAt: nowIso(),
+      }),
+    );
+
+    clearComposerAfterDispatch(activeThread.id);
+    setStatus(
+      options.interruptAfterQueue
+        ? "Queued. Interrupting to send sooner"
+        : "Queued for after the current turn",
+    );
+
+    if (options.interruptAfterQueue) {
+      void interruptActiveTurn();
+    }
+  }
+
+  const sendQueuedComposerSubmission = useEffectEvent(
+    async (
+      thread: ThreadReadModel,
+      queuedSubmission: QueuedComposerSubmissionState,
+    ): Promise<boolean> => {
+      if (sendInFlightRef.current || imagePasteInFlight) {
+        return false;
+      }
+
+      sendInFlightRef.current = true;
+      try {
+        const dispatchModelOptions = getDispatchModelOptions(
+          queuedSubmission.provider,
+          queuedSubmission.model,
+          queuedSubmission.modelOptions,
+        );
+        const serializedMentionText = queuedSubmission.mentions
+          .map((mention) => `@${mention.path}`)
+          .join(" ");
+        const promptTextForSend =
+          serializedMentionText.length > 0
+            ? queuedSubmission.text.trim().length > 0
+              ? `${serializedMentionText}\n${queuedSubmission.text}`
+              : `${serializedMentionText} `
+            : queuedSubmission.text;
+        const resolvedSubmission = await resolveComposerSubmission({
+          text: promptTextForSend,
+          homeDir: paths.homeDir,
+        });
+        const trimmed = resolvedSubmission.promptText.trim();
+        const pendingAttachments = mergeChatAttachments(
+          queuedSubmission.attachments,
+          resolvedSubmission.attachments,
+        );
+        if (!trimmed && pendingAttachments.length === 0) {
+          return true;
+        }
+
+        const submissionAttachments = pendingAttachments.map((attachment) => ({
+          type: "image" as const,
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          dataUrl: attachment.dataUrl,
+        }));
+        const messageId = newMessageId();
+        const createdAt = nowIso();
+
+        setPendingSends((current) => [
+          ...current,
+          {
+            threadId: thread.id,
+            messageId,
+            text: trimmed,
+            mentions: queuedSubmission.mentions.map(cloneComposerMention),
+            attachments: pendingAttachments,
+            createdAt,
+            visibleUntil: Date.now() + SEND_PLACEHOLDER_MIN_DURATION_MS,
+          },
+        ]);
+
+        await persistThreadSettingsForNextTurn({
+          thread,
+          threadId: thread.id,
+          createdAt,
+          model: queuedSubmission.model,
+          runtimeMode: queuedSubmission.runtimeMode,
+          interactionMode: queuedSubmission.interactionMode,
+        });
+        await dispatch({
+          type: "thread.turn.start",
+          commandId: newCommandId(),
+          threadId: thread.id as never,
+          message: {
+            messageId,
+            role: "user",
+            text: trimmed,
+            attachments: submissionAttachments,
+          },
+          provider: queuedSubmission.provider,
+          model: queuedSubmission.model,
+          ...(dispatchModelOptions ? { modelOptions: dispatchModelOptions } : {}),
+          ...(providerOptionsForDispatch ? { providerOptions: providerOptionsForDispatch } : {}),
+          assistantDeliveryMode: appSettings.enableAssistantStreaming ? "streaming" : "buffered",
+          runtimeMode: queuedSubmission.runtimeMode,
+          interactionMode: queuedSubmission.interactionMode,
+          createdAt,
+        });
+
+        setStatus("Queued message sent");
+        logger.log("composer.queuedSent", {
+          threadId: thread.id,
+          length: trimmed.length,
+        });
+        return true;
+      } catch (error) {
+        setStatus("Queued send failed");
+        logger.log("composer.queuedSendFailed", {
+          threadId: thread.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      } finally {
+        sendInFlightRef.current = false;
+      }
+    },
+  );
+
   async function sendPrompt() {
     const rawComposerValue = readComposerValue();
     const trimmedComposerValue = rawComposerValue.trim();
@@ -6255,17 +6521,7 @@ export function App({
         setSelectedProjectId(projectId);
         setSelectedThreadId(activeThread.id);
         setDraftInteractionMode(followUp.interactionMode);
-        resetComposerTextarea("");
-        setComposerMentions([]);
-        setComposerAttachments([]);
-        setComposerDraftsByThreadId((current) => {
-          if (!current[activeThread.id]) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[activeThread.id];
-          return next;
-        });
+        clearComposerAfterDispatch(activeThread.id);
         setStatus(
           followUp.interactionMode === "default" ? "Implementing plan" : "Plan feedback sent",
         );
@@ -6364,6 +6620,7 @@ export function App({
       try {
         if (activeThread) {
           await persistThreadSettingsForNextTurn({
+            thread: activeThread,
             threadId: threadId as string,
             createdAt,
             model: draftModel,
@@ -6404,18 +6661,7 @@ export function App({
 
       setSelectedProjectId(projectId);
       setSelectedThreadId(threadId);
-      resetComposerTextarea("");
-      setComposerMentions([]);
-      setComposerAttachments([]);
-      setComposerDraftsByThreadId((current) => {
-        const activeDraftKey = activeThreadId ?? threadId;
-        if (!current[activeDraftKey]) {
-          return current;
-        }
-        const next = { ...current };
-        delete next[activeDraftKey];
-        return next;
-      });
+      clearComposerAfterDispatch((activeThreadId ?? threadId) as string);
       setStatus("Prompt sent");
       logger.log("composer.sent", { threadId, length: trimmed.length });
     } finally {
@@ -7089,6 +7335,13 @@ export function App({
     activeThreadIsRunning,
     hasSendableContent: composerHasSendableContent,
   });
+  const composerQueueHint =
+    activeThreadIsRunning &&
+    composerHasSendableContent &&
+    !activePendingApproval &&
+    activePendingProgress === null
+      ? "Enter interrupts and sends sooner. Tab queues for after the current turn."
+      : null;
   const composerTraits = composerTraitsLabel(
     draftProvider,
     draftModel,
@@ -7124,7 +7377,11 @@ export function App({
     showSidebar: responsiveLayout.showSidebar,
   });
   const composerDrawerOffset =
-    composerTextareaHeight + 5 + (composerBanner ? 2 : 0) + (showScrollToBottom ? 1 : 0);
+    composerTextareaHeight +
+    5 +
+    (composerBanner ? 2 : 0) +
+    (composerQueueHint ? 1 : 0) +
+    (showScrollToBottom ? 1 : 0);
   const traitsMenuItems: TraitsMenuItem[] = useMemo(() => {
     if (draftProvider === "codex") {
       const options = getReasoningEffortOptions("codex");
@@ -9247,6 +9504,58 @@ export function App({
                     })(),
                   )}
 
+                  {activeQueuedComposerSubmissions.length > 0 ? (
+                    <box
+                      style={{
+                        width: "100%",
+                        marginTop: 1,
+                        marginBottom: 1,
+                        flexDirection: "column",
+                        alignItems: "flex-end",
+                      }}
+                    >
+                      <box
+                        style={{
+                          width: userMessageBubbleWidth,
+                          flexDirection: "column",
+                          flexShrink: 1,
+                          alignItems: "flex-end",
+                        }}
+                      >
+                        <box
+                          style={{
+                            width: "100%",
+                            minWidth: 0,
+                            paddingLeft: 1,
+                            paddingRight: 1,
+                            flexDirection: "column",
+                            flexShrink: 1,
+                            alignSelf: "flex-end",
+                            backgroundColor: PALETTE.surfaceAlt,
+                          }}
+                        >
+                          <text
+                            content="Queued for after the current turn"
+                            style={{ fg: PALETTE.muted }}
+                          />
+                          {activeQueuedComposerSubmissions.slice(0, 3).map((entry) => (
+                            <text
+                              key={`queued-preview-${entry.queuedAt}`}
+                              content={`↳ ${summarizeQueuedComposerPreview(entry.text)}`}
+                              style={{ fg: PALETTE.subtle }}
+                            />
+                          ))}
+                          {activeQueuedComposerSubmissions.length > 3 ? (
+                            <text
+                              content={`…and ${activeQueuedComposerSubmissions.length - 3} more`}
+                              style={{ fg: PALETTE.subtle }}
+                            />
+                          ) : null}
+                        </box>
+                      </box>
+                    </box>
+                  ) : null}
+
                   {showAssistantTyping ? (
                     <box
                       key="assistant-typing"
@@ -9396,6 +9705,17 @@ export function App({
                       }}
                     >
                       <text content={composerBanner.text} style={{ fg: PALETTE.text }} />
+                    </box>
+                  ) : null}
+                  {composerQueueHint ? (
+                    <box
+                      style={{
+                        paddingLeft: 1,
+                        paddingRight: 1,
+                        marginBottom: 1,
+                      }}
+                    >
+                      <text content={composerQueueHint} style={{ fg: PALETTE.subtle }} />
                     </box>
                   ) : null}
 
@@ -9634,7 +9954,9 @@ export function App({
                           ) {
                             if (!key.shift) {
                               key.preventDefault();
-                              if (composerPrimaryAction === "send") {
+                              if (activeThreadIsRunning && composerHasSendableContent) {
+                                queueCurrentComposerSubmission({ interruptAfterQueue: true });
+                              } else if (composerPrimaryAction === "send") {
                                 void sendPrompt();
                               } else {
                                 void interruptActiveTurn();
@@ -9643,6 +9965,24 @@ export function App({
                               syncComposerFromTextarea();
                             }
                             return;
+                          }
+                          if (
+                            key.name === "tab" &&
+                            !key.shift &&
+                            !key.ctrl &&
+                            !key.meta &&
+                            !key.super
+                          ) {
+                            if (activeThreadIsRunning && composerHasSendableContent) {
+                              key.preventDefault();
+                              queueCurrentComposerSubmission({ interruptAfterQueue: false });
+                              return;
+                            }
+                            if (!activeThreadIsRunning && composerHasSendableContent) {
+                              key.preventDefault();
+                              void sendPrompt();
+                              return;
+                            }
                           }
                           syncComposerFromTextarea();
                         }}
@@ -9654,7 +9994,9 @@ export function App({
                           if (imagePasteInFlight || activePendingApproval) {
                             return;
                           }
-                          if (composerPrimaryAction === "send") {
+                          if (activeThreadIsRunning && composerHasSendableContent) {
+                            queueCurrentComposerSubmission({ interruptAfterQueue: true });
+                          } else if (composerPrimaryAction === "send") {
                             void sendPrompt();
                           } else {
                             void interruptActiveTurn();
@@ -9841,7 +10183,9 @@ export function App({
                               if (imagePasteInFlight) {
                                 return;
                               }
-                              if (composerPrimaryAction === "send") {
+                              if (activeThreadIsRunning && composerHasSendableContent) {
+                                queueCurrentComposerSubmission({ interruptAfterQueue: true });
+                              } else if (composerPrimaryAction === "send") {
                                 void sendPrompt();
                               } else {
                                 void interruptActiveTurn();
